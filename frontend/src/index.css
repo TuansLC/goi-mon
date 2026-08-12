@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-50 text-gray-900 antialiased;
+}
+
+/* Kitchen overdue blinking animations (R5.7) */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-blink-slow {
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+.animate-blink-medium {
+  animation: blink 1s ease-in-out infinite;
+}
+
+.animate-blink-fast {
+  animation: blink 0.6s ease-in-out infinite;
+}
+
+.animate-blink-fastest {
+  animation: blink 0.3s ease-in-out infinite;
+}

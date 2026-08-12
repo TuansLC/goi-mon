@@ -8,3 +8,6 @@ redis==5.2.1
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 apscheduler==3.11.0
+qrcode[pil]==8.0
+gspread==6.1.4
+google-auth==2.37.0

@@ -40,8 +40,18 @@ class Settings(BaseSettings):
     abandon_sweep_interval_minutes: int = 5
     scheduler_lock_ttl_seconds: int = 300
 
+    # --- Google Sheets reporting (R9) ---
+    google_service_account_json: str | None = None  # path to SA key JSON
+
+    # --- Printing (R6.3, R6.4) ---
+    printer_type: str = "none"  # "usb", "network", or "none"
+    printer_ip: str | None = None  # IP for network printers
+    printer_port: int = 9100  # default ESC/POS network port
+    bill_pdf_output_dir: str = "/tmp/qorder_bills"  # PDF fallback directory
+
     # --- App meta ---
     app_name: str = "QOrder API"
+    base_url: str = "http://localhost:3000"
     debug: bool = False
 
 
