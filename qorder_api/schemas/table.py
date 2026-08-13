@@ -31,6 +31,7 @@ class TableResponse(BaseModel):
     restaurant_id: UUID
     table_number: str
     qr_token: str
+    qr_image_url: str | None = None
     is_active: bool
     created_at: datetime
 

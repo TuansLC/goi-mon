@@ -56,6 +56,14 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // WebSocket endpoints (/ws/kitchen, /ws/t/{qr_token}).
+      // `ws: true` is required — without it the handshake is not proxied and
+      // the client reconnect loop spins forever against the Vite dev server.
+      "/ws": {
+        target: "ws://localhost:8000",
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 });

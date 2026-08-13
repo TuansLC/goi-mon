@@ -114,14 +114,14 @@ Kế hoạch triển khai tăng dần. Mỗi task chỉ động tới code, có 
   - **Test snapshot giá bất biến (Property 8)**: đổi `menu_items.price` sau khi món đã vào `order_items` → `price_snapshot` không đổi, tổng bill dùng giá snapshot.
   - _Requirements: 6.6, 6.8, 6.9, 6.1_
 
-- [ ] 11. Scheduler: auto-abandon + khôi phục phiên
+- [x] 11. Scheduler: auto-abandon + khôi phục phiên
 - [x] 11.1 Job sweep auto-abandon (CAS) + Redis lock
   - APScheduler mỗi ~5 phút; Redis lock `SET NX EX`; CAS `WHERE status='open'`; set `abandoned`, huỷ item dở (`session_abandoned`), **gọi `StaffCallService.dismiss_pending`** (hàm chung từ 9.1), `total_amount` NULL.
   - _Requirements: 13.2, 13.3, 13.4, 13.8_
 - [x] 11.2 Khôi phục/thanh toán phiên abandoned
   - `POST /sessions/{id}/restore`: nếu bàn chưa có phiên open → về `open`; nếu đã có → chỉ cho checkout thẳng; chặn quá 24h.
   - _Requirements: 13.5, 13.6, 13.7_
-- [ ] 11.3 Integration test lifecycle & race
+- [x] 11.3 Integration test lifecycle & race
   - Test 2 nhánh restore; race checkout↔sweep (CAS bên thua rỗng); bất biến 1 phiên open/bàn (Property 1).
   - **Test abandon auto-cancel món dở (Property 5 nhánh R13.8)**: sweep đánh `abandoned` → item chưa xong chuyển `cancelled`/`session_abandoned`, dừng nhấp nháy, dismiss calls.
   - **Test biên 24h khôi phục (Property 9)**: `abandoned_at` chưa quá 24h → restore/checkout được; vừa quá 24h → bị chặn.
@@ -131,7 +131,7 @@ Kế hoạch triển khai tăng dần. Mỗi task chỉ động tới code, có 
   - `ReportSyncService.sync(restaurant)` qua `gspread`+Service Account theo `report_sync_cron` (Redis lock); tổng hợp doanh thu/ngày + món bán chạy; lỗi → log+retry, không chặn vận hành; không dùng Sheets cho live data.
   - _Requirements: 9.1, 9.2, 9.3, 9.4_
 
-- [ ] 13. Test cô lập tenant & auth (bảo mật)
+- [x] 13. Test cô lập tenant & auth (bảo mật)
   - Test quán A không đọc/ghi được dữ liệu quán B qua mọi route; guard theo role; bật/tắt `kitchen_screen_requires_pin`.
   - _Requirements: 1.2, 10.6, 12.2, 12.10_
 

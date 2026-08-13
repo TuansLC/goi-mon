@@ -36,6 +36,7 @@ export interface Table {
   id: string;
   table_number: string;
   qr_token: string;
+  qr_image_url: string | null;
   is_active: boolean;
   created_at: string;
 }

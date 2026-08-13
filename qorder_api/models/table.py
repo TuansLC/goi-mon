@@ -27,6 +27,7 @@ class Table(Base):
     )
     table_number: Mapped[str] = mapped_column(String, nullable=False)
     qr_token: Mapped[str] = mapped_column(String, nullable=False)
+    qr_image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )

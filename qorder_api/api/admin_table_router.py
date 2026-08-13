@@ -1,7 +1,8 @@
 """Admin CRUD endpoints for tables + QR token generation (R2.1, R2.5, R2.6, R8.2).
 
 All routes require ``role=admin``. Queries filter by ``restaurant_id`` from the JWT
-to enforce tenant isolation.
+to enforce tenant isolation. QR images are uploaded to S3-compatible storage (MinIO)
+and served via public URL — no auth needed for <img> or <a download>.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from qorder_api.db import get_session
 from qorder_api.models.restaurant import Restaurant
 from qorder_api.models.table import Table
 from qorder_api.schemas.table import TableCreate, TableResponse, TableUpdate
+from qorder_api.storage import upload_file
 
 router = APIRouter(
     prefix="/admin/tables",
@@ -57,13 +59,18 @@ def _build_qr_url(slug: str, qr_token: str) -> str:
     return f"{settings.base_url}/{slug}/t/{qr_token}"
 
 
-def _render_qr_png(data: str) -> io.BytesIO:
-    """Render a QR code as PNG bytes."""
+def _render_qr_png_bytes(data: str) -> bytes:
+    """Render a QR code and return raw PNG bytes."""
     img = qrcode.make(data)
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
-    buffer.seek(0)
-    return buffer
+    return buffer.getvalue()
+
+
+def _upload_qr_image(table_id: UUID, png_bytes: bytes) -> str:
+    """Upload QR PNG to S3 storage and return the public URL."""
+    key = f"qr/{table_id}.png"
+    return upload_file(key, png_bytes, content_type="image/png")
 
 
 # ─── Endpoints ───────────────────────────────────────────────────────────────
@@ -79,13 +86,28 @@ async def create_table(
     user: CurrentUser,
     session: AsyncSession = Depends(get_session),
 ) -> TableResponse:
-    """Create a new table with an auto-generated ``qr_token`` (R2.1)."""
+    """Create a new table with an auto-generated ``qr_token`` (R2.1).
+
+    Also renders and uploads the QR PNG to MinIO so it can be viewed/downloaded
+    via a public URL without authentication.
+    """
+    slug = await _get_restaurant_slug(user.restaurant_id, session)
+    qr_token = _generate_qr_token()
+
     table = Table(
         restaurant_id=user.restaurant_id,
         table_number=body.table_number,
-        qr_token=_generate_qr_token(),
+        qr_token=qr_token,
     )
     session.add(table)
+    await session.flush()  # assign table.id
+
+    # Render QR → upload to MinIO
+    qr_url = _build_qr_url(slug, qr_token)
+    png_bytes = _render_qr_png_bytes(qr_url)
+    image_url = _upload_qr_image(table.id, png_bytes)
+    table.qr_image_url = image_url
+
     await session.commit()
     await session.refresh(table)
     return TableResponse.model_validate(table)
@@ -146,6 +168,7 @@ async def regenerate_qr(
 ) -> TableResponse:
     """Regenerate ``qr_token`` — old QR becomes invalid immediately (R2.6).
 
+    Re-renders the QR PNG and uploads to MinIO (overwrites the same key).
     If the table has an open session, the session stays open; only the QR
     link changes.
     """
@@ -163,7 +186,16 @@ async def regenerate_qr(
             detail="Table not found",
         )
 
-    table.qr_token = _generate_qr_token()
+    slug = await _get_restaurant_slug(user.restaurant_id, session)
+    new_token = _generate_qr_token()
+    table.qr_token = new_token
+
+    # Re-render and upload QR image (overwrites same key)
+    qr_url = _build_qr_url(slug, new_token)
+    png_bytes = _render_qr_png_bytes(qr_url)
+    image_url = _upload_qr_image(table.id, png_bytes)
+    table.qr_image_url = image_url
+
     session.add(table)
     await session.commit()
     await session.refresh(table)
@@ -176,9 +208,10 @@ async def get_qr_image(
     user: CurrentUser,
     session: AsyncSession = Depends(get_session),
 ) -> StreamingResponse:
-    """Render the table's QR code as a PNG image (R2.5).
+    """Render the table's QR code as a PNG image on-the-fly (R2.5).
 
-    The QR encodes: ``{BASE_URL}/{restaurant_slug}/t/{qr_token}``.
+    This endpoint is kept as a fallback for direct download. The preferred
+    way to display QR is via ``qr_image_url`` (served from MinIO, no auth needed).
     """
     result = await session.execute(
         select(Table).where(
@@ -196,6 +229,6 @@ async def get_qr_image(
 
     slug = await _get_restaurant_slug(user.restaurant_id, session)
     qr_url = _build_qr_url(slug, table.qr_token)
-    buffer = _render_qr_png(qr_url)
+    png_bytes = _render_qr_png_bytes(qr_url)
 
-    return StreamingResponse(buffer, media_type="image/png")
+    return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")

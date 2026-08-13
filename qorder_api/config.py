@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     # --- Google Sheets reporting (R9) ---
     google_service_account_json: str | None = None  # path to SA key JSON
 
+    # --- MinIO / S3 object storage (QR images, menu photos) ---
+    s3_endpoint_url: str = "http://localhost:9000"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
+    s3_bucket: str = "qorder-assets"
+    s3_public_url: str = "http://localhost:9000"  # URL browsers use to fetch objects
+
     # --- Printing (R6.3, R6.4) ---
     printer_type: str = "none"  # "usb", "network", or "none"
     printer_ip: str | None = None  # IP for network printers

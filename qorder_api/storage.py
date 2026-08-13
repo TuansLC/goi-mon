@@ -1,0 +1,132 @@
+"""S3-compatible object storage client (MinIO in dev, AWS S3 / R2 in prod).
+
+Provides:
+- ``ensure_bucket()`` — create the bucket if it doesn't exist + set public read policy.
+- ``upload_file()`` — upload bytes with content type, returns the public URL.
+- ``delete_file()`` — remove an object by key.
+- ``get_public_url()`` — construct the public URL for a given key.
+
+All functions are **synchronous** (boto3 is sync). They are fast enough for the
+small QR PNGs (~2–5 KB) generated at table creation time. If menu photo uploads
+become a bottleneck, wrap in ``asyncio.to_thread``.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+
+import boto3
+from botocore.config import Config as BotoConfig
+from botocore.exceptions import ClientError
+
+from qorder_api.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+# Lazy-initialized module-level client and state.
+_s3_client = None
+_bucket_ensured = False
+
+
+def _get_client():
+    """Return a cached boto3 S3 client configured from app settings."""
+    global _s3_client
+    if _s3_client is None:
+        settings = get_settings()
+        _s3_client = boto3.client(
+            "s3",
+            endpoint_url=settings.s3_endpoint_url,
+            aws_access_key_id=settings.s3_access_key,
+            aws_secret_access_key=settings.s3_secret_key,
+            config=BotoConfig(signature_version="s3v4"),
+            region_name="us-east-1",  # MinIO ignores this but boto3 requires it
+        )
+    return _s3_client
+
+
+def ensure_bucket() -> None:
+    """Create the bucket if it doesn't exist and set a public-read policy.
+
+    Safe to call multiple times — skips if already done this process lifetime.
+    """
+    global _bucket_ensured
+    if _bucket_ensured:
+        return
+
+    settings = get_settings()
+    client = _get_client()
+    bucket = settings.s3_bucket
+
+    try:
+        client.head_bucket(Bucket=bucket)
+    except ClientError as e:
+        error_code = int(e.response["Error"]["Code"])
+        if error_code == 404:
+            client.create_bucket(Bucket=bucket)
+            logger.info("Created S3 bucket: %s", bucket)
+        else:
+            raise
+
+    # Set public-read policy so <img src> works without auth
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "PublicRead",
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": ["s3:GetObject"],
+                "Resource": [f"arn:aws:s3:::{bucket}/*"],
+            }
+        ],
+    }
+    client.put_bucket_policy(Bucket=bucket, Policy=json.dumps(policy))
+    _bucket_ensured = True
+    logger.info("Bucket '%s' ready with public-read policy.", bucket)
+
+
+def upload_file(key: str, data: bytes, content_type: str = "image/png") -> str:
+    """Upload bytes to S3 and return the public URL.
+
+    Args:
+        key: Object key (path within the bucket), e.g. "qr/{table_id}.png".
+        data: Raw file bytes.
+        content_type: MIME type for the object.
+
+    Returns:
+        The public URL for the uploaded object.
+    """
+    ensure_bucket()
+    settings = get_settings()
+    client = _get_client()
+
+    client.put_object(
+        Bucket=settings.s3_bucket,
+        Key=key,
+        Body=data,
+        ContentType=content_type,
+    )
+
+    return get_public_url(key)
+
+
+def delete_file(key: str) -> None:
+    """Delete an object from S3. No-op if the object doesn't exist."""
+    settings = get_settings()
+    client = _get_client()
+
+    try:
+        client.delete_object(Bucket=settings.s3_bucket, Key=key)
+    except ClientError:
+        logger.warning("Failed to delete S3 object: %s", key, exc_info=True)
+
+
+def get_public_url(key: str) -> str:
+    """Construct the public URL for a given object key.
+
+    Format: ``{s3_public_url}/{bucket}/{key}``
+    """
+    settings = get_settings()
+    base = settings.s3_public_url.rstrip("/")
+    return f"{base}/{settings.s3_bucket}/{key}"

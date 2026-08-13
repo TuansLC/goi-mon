@@ -9,7 +9,6 @@ import {
   createTable,
   updateTable,
   regenerateQr,
-  getQrImageUrl,
 } from "./api";
 import type { Table } from "./types";
 
@@ -96,10 +95,11 @@ export default function TableManagementPage() {
   };
 
   const handleDownloadQr = (table: Table) => {
-    const url = getQrImageUrl(table.id);
+    if (!table.qr_image_url) return;
     const link = document.createElement("a");
-    link.href = url;
+    link.href = table.qr_image_url;
     link.download = `qr-ban-${table.table_number}.png`;
+    link.target = "_blank";
     link.click();
   };
 
@@ -215,13 +215,18 @@ export default function TableManagementPage() {
               </button>
             </div>
 
-            {qrTableId === table.id && (
+            {qrTableId === table.id && table.qr_image_url && (
               <div className="mt-3 flex justify-center">
                 <img
-                  src={getQrImageUrl(table.id)}
+                  src={table.qr_image_url}
                   alt={`QR bàn ${table.table_number}`}
                   className="w-48 h-48 border rounded"
                 />
+              </div>
+            )}
+            {qrTableId === table.id && !table.qr_image_url && (
+              <div className="mt-3 text-center text-gray-400 text-sm">
+                Chưa có ảnh QR. Bấm "🔄 QR mới" để tạo.
               </div>
             )}
           </div>

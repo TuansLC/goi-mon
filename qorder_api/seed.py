@@ -15,12 +15,15 @@ if it already exists.
 from __future__ import annotations
 
 import asyncio
+import io
 import secrets
 from decimal import Decimal
 
-from passlib.context import CryptContext
+import qrcode  # type: ignore[import-untyped]
 from sqlalchemy import select
 
+from qorder_api.auth.passwords import hash_password, hash_pin
+from qorder_api.config import get_settings
 from qorder_api.db import async_session_factory
 from qorder_api.models import (
     MenuCategory,
@@ -31,9 +34,10 @@ from qorder_api.models import (
     User,
     UserRole,
 )
+from qorder_api.storage import upload_file
 
-# bcrypt for both admin passwords and the shared staff PIN (R12.6).
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Hashing goes through qorder_api.auth.passwords so the seed uses the exact same
+# bcrypt path as login verification (passlib is incompatible with bcrypt>=4.1).
 
 RESTAURANT_SLUG = "bia-hoi-demo"
 ADMIN_EMAIL = "admin@qorder.local"
@@ -74,27 +78,40 @@ async def seed() -> None:
                     restaurant_id=restaurant.id,
                     role=UserRole.ADMIN,
                     email=ADMIN_EMAIL,
-                    password_hash=_pwd_context.hash(ADMIN_PASSWORD),
+                    password_hash=hash_password(ADMIN_PASSWORD),
                     display_name="Quản trị",
                 ),
                 User(
                     restaurant_id=restaurant.id,
                     role=UserRole.STAFF,
-                    pin_hash=_pwd_context.hash(STAFF_PIN),
+                    pin_hash=hash_pin(STAFF_PIN),
                     display_name="Nhân viên",
                 ),
             ]
         )
 
-        # --- tables ---
+        # --- tables + QR images ---
+        tables: list[Table] = []
         for number in ("1", "2", "VIP-1"):
-            session.add(
-                Table(
-                    restaurant_id=restaurant.id,
-                    table_number=number,
-                    qr_token=secrets.token_urlsafe(16),
-                )
+            t = Table(
+                restaurant_id=restaurant.id,
+                table_number=number,
+                qr_token=secrets.token_urlsafe(16),
             )
+            session.add(t)
+            tables.append(t)
+
+        await session.flush()  # assign table ids
+
+        # Upload QR images to MinIO
+        settings = get_settings()
+        for t in tables:
+            qr_url = f"{settings.base_url}/{RESTAURANT_SLUG}/t/{t.qr_token}"
+            img = qrcode.make(qr_url)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            key = f"qr/{t.id}.png"
+            t.qr_image_url = upload_file(key, buf.getvalue(), content_type="image/png")
 
         # --- menu categories + items ---
         cat_food = MenuCategory(
