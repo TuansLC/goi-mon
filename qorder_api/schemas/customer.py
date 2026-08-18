@@ -29,6 +29,8 @@ class CustomerMenuItemResponse(BaseModel):
     prep_time_minutes: int
     is_available: bool
     image_url: str | None
+    image_large_url: str | None
+    is_featured: bool
     category_id: UUID | None
 
     model_config = {"from_attributes": True}

@@ -19,7 +19,11 @@ export interface MenuItem {
   price: string; // Decimal as string from backend
   prep_time_minutes: number;
   is_available: boolean;
+  /** 400x400 WebP thumbnail, null when the owner hasn't uploaded a photo. */
   image_url: string | null;
+  /** Max-1000px WebP variant used by the lightbox. */
+  image_large_url: string | null;
+  is_featured: boolean;
   category_id: string;
 }
 

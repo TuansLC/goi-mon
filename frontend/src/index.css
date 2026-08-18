@@ -2,8 +2,212 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Kitchen & admin stay on the light theme. */
 body {
   @apply bg-gray-50 text-gray-900 antialiased;
+}
+
+/* ==========================================================================
+   Customer (QR) theme
+   --------------------------------------------------------------------------
+   Defined as plain CSS custom properties + component classes instead of
+   Tailwind theme colors, so the palette lives in one place and is picked up on
+   every CSS rebuild (a `tailwind.config.js` theme change only applies after a
+   full dev-server restart, which silently drops the whole palette).
+   ========================================================================== */
+:root {
+  --qo-bg: #100d0b;
+  --qo-surface: #1b1512;
+  --qo-raised: #241c17;
+  --qo-border: #332821;
+  --qo-amber: #e9a63f;
+  --qo-amber-soft: #f2c078;
+  --qo-text: #f6efe6;
+  --qo-muted: #a3907d;
+
+  --qo-amber-a10: rgb(233 166 63 / 0.1);
+  --qo-amber-a15: rgb(233 166 63 / 0.15);
+  --qo-amber-a20: rgb(233 166 63 / 0.2);
+  --qo-amber-a30: rgb(233 166 63 / 0.3);
+  --qo-green-a15: rgb(16 185 129 / 0.15);
+  --qo-red-a15: rgb(239 68 68 / 0.15);
+}
+
+@layer components {
+  /* --- Surfaces --- */
+  .qo-page {
+    background:
+      radial-gradient(120% 60% at 50% 0%, #1a1411 0%, var(--qo-bg) 60%),
+      var(--qo-bg);
+    color: var(--qo-text);
+  }
+
+  .qo-header {
+    background: linear-gradient(180deg, #2a211a 0%, var(--qo-surface) 100%);
+    border-bottom: 1px solid var(--qo-border);
+  }
+
+  .qo-tabbar {
+    background: rgb(16 13 11 / 0.92);
+  }
+
+  .qo-bottombar {
+    background: linear-gradient(180deg, var(--qo-surface) 0%, #141010 100%);
+    border-top: 1px solid var(--qo-border);
+  }
+
+  .qo-card {
+    background: linear-gradient(180deg, var(--qo-raised) 0%, #1f1813 100%);
+    border: 1px solid var(--qo-border);
+  }
+
+  .qo-card-off {
+    background: var(--qo-surface);
+    border: 1px dashed var(--qo-border);
+  }
+
+  /* --- Menu photos --- */
+  .qo-thumb {
+    background: var(--qo-surface);
+    border: 1px solid var(--qo-border);
+  }
+
+  .qo-thumb-placeholder {
+    background: linear-gradient(135deg, #2a211a 0%, var(--qo-surface) 100%);
+    color: var(--qo-amber);
+  }
+
+  .qo-surface {
+    background: var(--qo-surface);
+    border: 1px solid var(--qo-border);
+  }
+
+  .qo-divider {
+    background: var(--qo-border);
+  }
+
+  /* --- Text --- */
+  .qo-muted {
+    color: var(--qo-muted);
+  }
+  .qo-accent {
+    color: var(--qo-amber);
+  }
+  .qo-accent-soft {
+    color: var(--qo-amber-soft);
+  }
+
+  /* --- Buttons --- */
+  .qo-btn-primary {
+    background: linear-gradient(135deg, var(--qo-amber-soft) 0%, var(--qo-amber) 100%);
+    color: #1b1512;
+    box-shadow: 0 8px 20px rgb(233 166 63 / 0.22);
+  }
+  .qo-btn-primary:disabled {
+    background: var(--qo-raised);
+    color: var(--qo-muted);
+    box-shadow: none;
+  }
+
+  .qo-btn-add {
+    background: linear-gradient(135deg, var(--qo-amber-soft) 0%, var(--qo-amber) 100%);
+    color: #1b1512;
+    box-shadow: 0 6px 14px rgb(233 166 63 / 0.28);
+  }
+
+  .qo-btn-ghost {
+    background: var(--qo-surface);
+    border: 1px solid var(--qo-border);
+    color: var(--qo-text);
+  }
+
+  .qo-btn-danger-ghost {
+    border: 1px solid rgb(248 113 113 / 0.4);
+    color: #fca5a5;
+  }
+  .qo-btn-danger-ghost:hover {
+    background: rgb(248 113 113 / 0.1);
+  }
+
+  .qo-icon-badge {
+    background: linear-gradient(135deg, var(--qo-amber-soft) 0%, var(--qo-amber) 100%);
+    color: #1b1512;
+    box-shadow: 0 6px 16px rgb(233 166 63 / 0.25);
+  }
+
+  /* --- Tabs --- */
+  .qo-tab {
+    background: var(--qo-surface);
+    border: 1px solid var(--qo-border);
+    color: var(--qo-muted);
+  }
+  .qo-tab-active {
+    background: linear-gradient(135deg, var(--qo-amber-soft) 0%, var(--qo-amber) 100%);
+    border: 1px solid transparent;
+    color: #1b1512;
+    box-shadow: 0 8px 20px rgb(233 166 63 / 0.22);
+  }
+
+  /* --- Chips / badges --- */
+  .qo-chip-wait {
+    background: var(--qo-amber-a15);
+    color: var(--qo-amber-soft);
+  }
+  .qo-chip-served {
+    background: var(--qo-green-a15);
+    color: #6ee7b7;
+  }
+  .qo-chip-cancelled {
+    background: var(--qo-red-a15);
+    color: #fca5a5;
+  }
+  .qo-chip-qty {
+    background: var(--qo-amber-a20);
+    color: var(--qo-amber-soft);
+  }
+  .qo-chip-off {
+    background: var(--qo-red-a15);
+    color: #fca5a5;
+  }
+  .qo-count-on-amber {
+    background: var(--qo-bg);
+    color: var(--qo-amber);
+  }
+  .qo-count-on-dark {
+    background: var(--qo-amber);
+    color: var(--qo-bg);
+  }
+
+  /* --- Feedback --- */
+  .qo-notice {
+    background: var(--qo-amber-a10);
+    border: 1px solid var(--qo-amber-a30);
+    color: var(--qo-amber-soft);
+  }
+  .qo-toast-success {
+    background: var(--qo-green-a15);
+    border: 1px solid rgb(16 185 129 / 0.3);
+    color: #a7f3d0;
+  }
+
+  /* --- Form --- */
+  .qo-input {
+    background: var(--qo-bg);
+    border: 1px solid var(--qo-border);
+    color: var(--qo-text);
+  }
+  .qo-input::placeholder {
+    color: var(--qo-muted);
+  }
+  .qo-input:focus {
+    border-color: var(--qo-amber);
+    outline: none;
+  }
+
+  .qo-spinner {
+    border: 2px solid var(--qo-amber);
+    border-top-color: transparent;
+  }
 }
 
 /* Kitchen overdue blinking animations (R5.7) */

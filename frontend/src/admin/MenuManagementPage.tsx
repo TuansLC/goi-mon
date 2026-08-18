@@ -11,6 +11,8 @@ import {
   listMenuItems,
   createMenuItem,
   updateMenuItem,
+  uploadMenuItemImage,
+  deleteMenuItemImage,
   getPrepTimePresets,
 } from "./api";
 import type { MenuCategory, MenuItem, PrepTimePresets } from "./types";
@@ -39,6 +41,7 @@ export default function MenuManagementPage() {
   const [itemDescription, setItemDescription] = useState("");
   const [itemImageUrl, setItemImageUrl] = useState("");
   const [itemSort, setItemSort] = useState("");
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!token) return;
@@ -186,6 +189,46 @@ export default function MenuManagementPage() {
       loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi cập nhật");
+    }
+  };
+
+  const toggleItemFeatured = async (item: MenuItem) => {
+    if (!token) return;
+    try {
+      await updateMenuItem(token, item.id, { is_featured: !item.is_featured });
+      loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi cập nhật");
+    }
+  };
+
+  // --- Item photo handlers ---
+
+  const handleImagePick = async (item: MenuItem, file: File) => {
+    if (!token) return;
+    setUploadingId(item.id);
+    setError("");
+    try {
+      // The server resizes to WebP, so a raw phone photo is fine here.
+      await uploadMenuItemImage(token, item.id, file);
+      loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi tải ảnh lên");
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
+  const handleImageDelete = async (item: MenuItem) => {
+    if (!token) return;
+    setUploadingId(item.id);
+    try {
+      await deleteMenuItemImage(token, item.id);
+      loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi xoá ảnh");
+    } finally {
+      setUploadingId(null);
     }
   };
 
@@ -401,7 +444,9 @@ export default function MenuManagementPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">URL ảnh</label>
+                <label className="block text-sm text-gray-600 mb-1">
+                  URL ảnh (tuỳ chọn)
+                </label>
                 <input
                   type="text"
                   value={itemImageUrl}
@@ -409,6 +454,9 @@ export default function MenuManagementPage() {
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="https://..."
                 />
+                <p className="text-xs text-gray-400 mt-1">
+                  Nên tải ảnh trực tiếp ở cột “Ảnh” bên dưới — ảnh sẽ được nén tự động.
+                </p>
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Thứ tự</label>
@@ -453,10 +501,12 @@ export default function MenuManagementPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
               <tr>
+                <th className="text-left px-4 py-3 text-gray-600">Ảnh</th>
                 <th className="text-left px-4 py-3 text-gray-600">Tên</th>
                 <th className="text-left px-4 py-3 text-gray-600">Giá</th>
                 <th className="text-left px-4 py-3 text-gray-600">Nhóm</th>
                 <th className="text-left px-4 py-3 text-gray-600">Có sẵn</th>
+                <th className="text-left px-4 py-3 text-gray-600">Đặc trưng</th>
                 <th className="text-left px-4 py-3 text-gray-600">Trạng thái</th>
                 <th className="text-right px-4 py-3 text-gray-600">Thao tác</th>
               </tr>
@@ -466,6 +516,14 @@ export default function MenuManagementPage() {
                 const cat = categories.find((c) => c.id === item.category_id);
                 return (
                   <tr key={item.id}>
+                    <td className="px-4 py-3">
+                      <ItemPhotoCell
+                        item={item}
+                        busy={uploadingId === item.id}
+                        onPick={(file) => handleImagePick(item, file)}
+                        onDelete={() => handleImageDelete(item)}
+                      />
+                    </td>
                     <td className="px-4 py-3 font-medium">{item.name}</td>
                     <td className="px-4 py-3">{item.price}</td>
                     <td className="px-4 py-3 text-gray-500">
@@ -481,6 +539,19 @@ export default function MenuManagementPage() {
                         }`}
                       >
                         {item.is_available ? "Có" : "Hết"}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => toggleItemFeatured(item)}
+                        className={`px-2 py-1 rounded text-xs ${
+                          item.is_featured
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-gray-100 text-gray-500"
+                        }`}
+                        title="Hiện trong dải “Món đặc trưng” ở màn khách (cần có ảnh)"
+                      >
+                        {item.is_featured ? "★ Có" : "☆ Không"}
                       </button>
                     </td>
                     <td className="px-4 py-3">
@@ -513,7 +584,7 @@ export default function MenuManagementPage() {
               })}
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-gray-400">
+                  <td colSpan={8} className="px-4 py-6 text-center text-gray-400">
                     Chưa có món nào
                   </td>
                 </tr>
@@ -522,6 +593,76 @@ export default function MenuManagementPage() {
           </table>
         </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * Photo cell for one menu item: preview + upload + remove.
+ *
+ * Accepts a raw phone photo — the server does the resizing/compression, so the
+ * owner never has to prepare images.
+ */
+function ItemPhotoCell({
+  item,
+  busy,
+  onPick,
+  onDelete,
+}: {
+  item: MenuItem;
+  busy: boolean;
+  onPick: (file: File) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-gray-50">
+        {item.image_url ? (
+          <img
+            src={item.image_url}
+            alt={item.name}
+            width={96}
+            height={96}
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
+            Chưa có
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-0.5 text-xs">
+        <label
+          className={`cursor-pointer text-blue-600 hover:underline ${
+            busy ? "pointer-events-none opacity-50" : ""
+          }`}
+        >
+          {busy ? "Đang tải..." : item.image_url ? "Đổi ảnh" : "Tải ảnh"}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            disabled={busy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onPick(file);
+              // Reset so picking the same file again still fires onChange.
+              e.target.value = "";
+            }}
+          />
+        </label>
+
+        {item.image_url && !busy && (
+          <button
+            onClick={onDelete}
+            className="text-left text-red-500 hover:underline"
+          >
+            Xoá ảnh
+          </button>
+        )}
+      </div>
     </div>
   );
 }

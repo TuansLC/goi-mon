@@ -63,8 +63,15 @@ def ensure_bucket() -> None:
     except ClientError as e:
         error_code = int(e.response["Error"]["Code"])
         if error_code == 404:
-            client.create_bucket(Bucket=bucket)
-            logger.info("Created S3 bucket: %s", bucket)
+            try:
+                client.create_bucket(Bucket=bucket)
+                logger.info("Created S3 bucket: %s", bucket)
+            except ClientError as create_err:
+                # MinIO returns BucketAlreadyOwnedByYou if the bucket was created
+                # between head_bucket (404) and create_bucket — safe to ignore.
+                err_code = create_err.response.get("Error", {}).get("Code", "")
+                if err_code != "BucketAlreadyOwnedByYou":
+                    raise
         else:
             raise
 
@@ -86,13 +93,21 @@ def ensure_bucket() -> None:
     logger.info("Bucket '%s' ready with public-read policy.", bucket)
 
 
-def upload_file(key: str, data: bytes, content_type: str = "image/png") -> str:
+def upload_file(
+    key: str,
+    data: bytes,
+    content_type: str = "image/png",
+    cache_control: str | None = None,
+) -> str:
     """Upload bytes to S3 and return the public URL.
 
     Args:
         key: Object key (path within the bucket), e.g. "qr/{table_id}.png".
         data: Raw file bytes.
         content_type: MIME type for the object.
+        cache_control: Optional ``Cache-Control`` header. Use a long max-age only
+            for versioned keys, otherwise browsers keep serving a stale image
+            after the owner replaces it.
 
     Returns:
         The public URL for the uploaded object.
@@ -101,11 +116,13 @@ def upload_file(key: str, data: bytes, content_type: str = "image/png") -> str:
     settings = get_settings()
     client = _get_client()
 
+    extra = {"CacheControl": cache_control} if cache_control else {}
     client.put_object(
         Bucket=settings.s3_bucket,
         Key=key,
         Body=data,
         ContentType=content_type,
+        **extra,
     )
 
     return get_public_url(key)
@@ -130,3 +147,14 @@ def get_public_url(key: str) -> str:
     settings = get_settings()
     base = settings.s3_public_url.rstrip("/")
     return f"{base}/{settings.s3_bucket}/{key}"
+
+
+def key_from_public_url(url: str) -> str | None:
+    """Recover the object key from a public URL, or ``None`` if it isn't ours.
+
+    Used to delete the previous image when an owner replaces a menu photo.
+    """
+    settings = get_settings()
+    marker = f"/{settings.s3_bucket}/"
+    _, _, key = url.partition(marker)
+    return key or None

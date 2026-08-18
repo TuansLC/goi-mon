@@ -7,12 +7,9 @@ interface CallStaffButtonProps {
 /**
  * Floating "Gọi nhân viên" button (R7.1).
  *
- * When pressed, calls the staff endpoint.
- * - 201 (created): show confirmation "Nhân viên đang tới!"
- * - 200 (cooldown): show soft message "Đã gửi yêu cầu, nhân viên đang tới"
- * - Error: show error briefly
- *
- * Visible at all times when session is open.
+ * - 201 (created): "Nhân viên đang tới!"
+ * - 200 (cooldown, R7.4): soft message from the server
+ * - Error: show the message briefly
  */
 export default function CallStaffButton({ onCall }: CallStaffButtonProps) {
   const [loading, setLoading] = useState(false);
@@ -25,47 +22,47 @@ export default function CallStaffButton({ onCall }: CallStaffButtonProps) {
 
     try {
       const result = await onCall();
-      if (result.created) {
-        setFeedback("Nhân viên đang tới!");
-      } else {
-        setFeedback(result.message || "Đã gửi yêu cầu, nhân viên đang tới.");
-      }
+      setFeedback(
+        result.created
+          ? "Nhân viên đang tới!"
+          : result.message || "Đã gửi yêu cầu, nhân viên đang tới."
+      );
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Lỗi không xác định";
-      setFeedback(msg);
+      setFeedback(err instanceof Error ? err.message : "Lỗi không xác định");
     } finally {
       setLoading(false);
-      // Auto-hide feedback after 3 seconds
       setTimeout(() => setFeedback(null), 3000);
     }
   };
 
   return (
-    <div className="fixed bottom-20 right-4 z-50 flex flex-col items-end gap-2">
-      {/* Feedback toast */}
+    <div className="fixed bottom-24 right-4 z-50 flex flex-col items-end gap-2">
       {feedback && (
-        <div className="bg-gray-800 text-white text-xs px-3 py-2 rounded-lg shadow-lg max-w-[200px] text-center">
+        <div
+          role="status"
+          className="qo-notice max-w-[210px] rounded-xl px-3 py-2 text-center text-xs shadow-lg"
+        >
           {feedback}
         </div>
       )}
 
-      {/* Call staff FAB */}
       <button
         onClick={handleClick}
         disabled={loading}
-        className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white font-medium text-sm px-4 py-3 rounded-full shadow-lg disabled:opacity-70 transition-colors"
+        className="qo-btn-ghost flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold shadow-lg transition-transform active:scale-95 disabled:opacity-70"
         aria-label="Gọi nhân viên"
       >
         {loading ? (
-          <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+          <span className="qo-spinner h-4 w-4 animate-spin rounded-full" />
         ) : (
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4"
+            className="qo-accent h-4 w-4"
             viewBox="0 0 20 20"
             fill="currentColor"
+            aria-hidden="true"
           >
-            <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+            <path d="M10 1a7 7 0 00-7 7v1.5A2.5 2.5 0 001.5 12v1A2.5 2.5 0 004 15.5h.5a1 1 0 001-1V10a1 1 0 00-1-1H5V8a5 5 0 1110 0v1h-.5a1 1 0 00-1 1v4.5a1 1 0 001 1h.29A2.5 2.5 0 0113.5 17H11a1 1 0 100 2h2.5A4.5 4.5 0 0018 14.5V8a7 7 0 00-7-7h-1z" />
           </svg>
         )}
         <span>Gọi nhân viên</span>

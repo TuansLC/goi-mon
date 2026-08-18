@@ -72,7 +72,14 @@ class MenuItem(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )
+    # Thumbnail (400x400 WebP) shown in the menu list.
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Larger variant (max side 1000px) used by the customer lightbox.
+    image_large_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Highlighted in the "Món đặc trưng" carousel on the customer screen.
+    is_featured: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )

@@ -55,6 +55,7 @@ class MenuItemCreate(BaseModel):
     prep_time_minutes: int = Field(..., ge=0)
     category_id: UUID | None = None
     image_url: str | None = None
+    is_featured: bool = False
     sort_order: int = Field(default=0, ge=0)
 
 
@@ -69,6 +70,7 @@ class MenuItemUpdate(BaseModel):
     is_available: bool | None = None
     is_active: bool | None = None
     image_url: str | None = None
+    is_featured: bool | None = None
     sort_order: int | None = Field(default=None, ge=0)
 
 
@@ -85,6 +87,8 @@ class MenuItemResponse(BaseModel):
     is_available: bool
     is_active: bool
     image_url: str | None
+    image_large_url: str | None
+    is_featured: bool
     sort_order: int
     created_at: datetime
     updated_at: datetime

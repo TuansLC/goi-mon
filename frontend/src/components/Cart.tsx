@@ -1,4 +1,5 @@
 import type { CartItem } from "../types";
+import { formatPrice } from "../format";
 
 interface Props {
   items: CartItem[];
@@ -25,21 +26,23 @@ export default function Cart({
 }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col">
-      {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/40"
+        className="absolute inset-0 bg-black/60"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Panel */}
-      <div className="relative mt-auto bg-white rounded-t-2xl max-h-[85vh] flex flex-col shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h2 className="text-lg font-bold text-gray-900">Giỏ hàng</h2>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Giỏ hàng"
+        className="qo-page relative mt-auto flex max-h-[85vh] flex-col rounded-t-2xl shadow-2xl"
+      >
+        <div className="qo-header flex items-center justify-between rounded-t-2xl px-4 py-3">
+          <h2 className="text-lg font-bold">Giỏ hàng</h2>
           <button
             onClick={onClose}
-            className="p-1 text-gray-500 hover:text-gray-700"
+            className="qo-muted p-1 transition-colors hover:opacity-80"
             aria-label="Đóng giỏ hàng"
           >
             <svg
@@ -48,6 +51,7 @@ export default function Cart({
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"
@@ -59,8 +63,7 @@ export default function Cart({
           </button>
         </div>
 
-        {/* Items */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
           {items.map((item) => (
             <CartItemRow
               key={item.menu_item_id}
@@ -73,18 +76,17 @@ export default function Cart({
           ))}
         </div>
 
-        {/* Footer */}
-        <div className="border-t px-4 py-3 space-y-3">
-          <div className="flex justify-between text-base font-bold">
+        <div className="qo-bottombar space-y-3 px-4 py-3">
+          <div className="flex items-center justify-between text-base font-bold">
             <span>Tổng cộng</span>
-            <span className="text-orange-600">
+            <span className="qo-accent">
               {formatPrice(totalAmount, currency)}
             </span>
           </div>
           <button
             onClick={onSubmit}
             disabled={submitting || items.length === 0}
-            className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors"
+            className="qo-btn-primary w-full rounded-xl py-3 font-bold transition-transform active:scale-[0.99] disabled:cursor-not-allowed"
           >
             {submitting ? "Đang gửi..." : "Gửi order"}
           </button>
@@ -112,50 +114,51 @@ function CartItemRow({
   const subtotal = item.price * item.quantity;
 
   return (
-    <div className="flex flex-col gap-2 pb-3 border-b border-gray-100 last:border-0">
+    <div className="qo-card flex flex-col gap-2 rounded-xl px-3 py-3">
       <div className="flex items-center justify-between">
-        <div className="flex-1 min-w-0">
-          <p className="font-medium text-gray-900 truncate">{item.name}</p>
-          <p className="text-sm text-gray-500">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold">{item.name}</p>
+          <p className="qo-muted text-sm">
             {formatPrice(item.price, currency)} × {item.quantity} ={" "}
-            <span className="font-medium text-gray-700">
+            <span className="qo-accent-soft font-semibold">
               {formatPrice(subtotal, currency)}
             </span>
           </p>
         </div>
 
-        <div className="flex items-center gap-1 ml-2">
+        <div className="ml-2 flex items-center gap-1">
           <button
             onClick={() =>
               onUpdateQuantity(item.menu_item_id, item.quantity - 1)
             }
-            className="w-7 h-7 flex items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
-            aria-label="Giảm số lượng"
+            className="qo-btn-ghost flex h-8 w-8 items-center justify-center rounded-full"
+            aria-label={`Giảm số lượng ${item.name}`}
           >
             −
           </button>
-          <span className="w-7 text-center text-sm font-medium">
+          <span className="w-7 text-center text-sm font-semibold">
             {item.quantity}
           </span>
           <button
             onClick={() =>
               onUpdateQuantity(item.menu_item_id, item.quantity + 1)
             }
-            className="w-7 h-7 flex items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
-            aria-label="Tăng số lượng"
+            className="qo-btn-ghost flex h-8 w-8 items-center justify-center rounded-full"
+            aria-label={`Tăng số lượng ${item.name}`}
           >
             +
           </button>
           <button
             onClick={() => onRemove(item.menu_item_id)}
-            className="ml-1 w-7 h-7 flex items-center justify-center text-red-400 hover:text-red-600"
-            aria-label="Xóa món"
+            className="ml-1 flex h-8 w-8 items-center justify-center text-red-400 transition-colors hover:text-red-300"
+            aria-label={`Xóa ${item.name} khỏi giỏ`}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               className="h-4 w-4"
               viewBox="0 0 20 20"
               fill="currentColor"
+              aria-hidden="true"
             >
               <path
                 fillRule="evenodd"
@@ -167,21 +170,15 @@ function CartItemRow({
         </div>
       </div>
 
-      {/* Note input */}
+      {/* Per-item note (R3.5) */}
       <input
         type="text"
         value={item.note}
         onChange={(e) => onUpdateNote(item.menu_item_id, e.target.value)}
         placeholder="Ghi chú (vd: ít đá, không hành...)"
-        className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-orange-400 placeholder:text-gray-400"
+        aria-label={`Ghi chú cho ${item.name}`}
+        className="qo-input w-full rounded-lg px-3 py-2 text-sm"
       />
     </div>
   );
-}
-
-function formatPrice(amount: number, currency: string): string {
-  if (currency === "VND") {
-    return amount.toLocaleString("vi-VN") + "đ";
-  }
-  return amount.toLocaleString() + " " + currency;
 }

@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { resolveQR, createOrder, getSession, callStaff, cancelItem } from "../api";
 import { useCart } from "../hooks/useCart";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { formatPrice } from "../format";
 import type {
   QRResolveResponse,
   MenuItem,
@@ -11,9 +12,13 @@ import type {
   WsEvent,
 } from "../types";
 import MenuCategorySection from "../components/MenuCategorySection";
+import MyOrdersPanel from "../components/MyOrdersPanel";
+import FeaturedCarousel from "../components/FeaturedCarousel";
+import ImageLightbox from "../components/ImageLightbox";
 import Cart from "../components/Cart";
-import OrderStatusPanel from "../components/OrderStatusPanel";
 import CallStaffButton from "../components/CallStaffButton";
+
+type Tab = "menu" | "orders";
 
 export default function MenuPage() {
   const { qrToken } = useParams<{ slug: string; qrToken: string }>();
@@ -23,6 +28,8 @@ export default function MenuPage() {
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>("menu");
+  const [zoomedItem, setZoomedItem] = useState<MenuItem | null>(null);
 
   // Session & realtime state
   const [sessionItems, setSessionItems] = useState<SessionItem[]>([]);
@@ -101,13 +108,16 @@ export default function MenuPage() {
       }
       case "order.created": {
         const order = (event as Record<string, unknown>).order as
-          | { items?: SessionItem[] }
+          | { id?: string; items?: SessionItem[] }
           | undefined;
         if (order?.items) {
-          // Merge new items (may come from another device on same table)
+          // Append only items we don't already know about. The WS payload is
+          // partial (no price/prep_time), so never overwrite existing entries —
+          // the REST response for our own order carries the full data.
           setSessionItems((prev) => {
             const existingIds = new Set(prev.map((i) => i.id));
             const newItems = order.items!.filter((i) => !existingIds.has(i.id));
+            if (newItems.length === 0) return prev;
             return [...prev, ...newItems];
           });
         }
@@ -132,13 +142,47 @@ export default function MenuPage() {
     onEvent: handleWsEvent,
   });
 
+  /** Items still waiting to be served — drives the "Đơn của tôi" tab badge. */
+  const waitingCount = useMemo(
+    () =>
+      sessionItems.filter(
+        (i) => i.status !== "served" && i.status !== "cancelled"
+      ).length,
+    [sessionItems]
+  );
+
+  /**
+   * Running subtotal of everything ordered so far, cancelled items excluded
+   * (R11.5). This is an indication for the customer — the binding total is
+   * computed by the server at checkout from served items only (R6.9).
+   */
+  const orderedSubtotal = useMemo(
+    () =>
+      sessionItems
+        .filter((i) => i.status !== "cancelled")
+        .reduce(
+          (sum, i) => sum + (parseFloat(i.price_snapshot) || 0) * i.quantity,
+          0
+        ),
+    [sessionItems]
+  );
+
+  /** Items the owner flagged as highlights, for the photo carousel. */
+  const featuredItems = useMemo(
+    () =>
+      (data?.menu ?? [])
+        .flatMap((category) => category.items)
+        .filter((item) => item.is_featured),
+    [data]
+  );
+
   const handleAddItem = (item: MenuItem) => {
     if (!item.is_available) return;
     cart.addItem(item);
   };
 
   const handleSubmitOrder = async () => {
-    if (!qrToken || cart.items.length === 0) return;
+    if (!qrToken || cart.items.length === 0 || submitting) return;
 
     const body: CreateOrderRequest = {
       items: cart.items.map((ci) => ({
@@ -153,10 +197,10 @@ export default function MenuPage() {
       const response = await createOrder(qrToken, body);
       cart.clearCart();
       setCartOpen(false);
+      setTab("orders");
       setSuccessMsg("Đã gửi order thành công! Món đang được chuẩn bị.");
       setTimeout(() => setSuccessMsg(null), 4000);
 
-      // Add new items to session state immediately
       const newItems: SessionItem[] = response.items.map((oi) => ({
         id: oi.id,
         order_id: response.id,
@@ -173,7 +217,17 @@ export default function MenuPage() {
         cancelled_by: null,
         cancel_reason: null,
       }));
-      setSessionItems((prev) => [...prev, ...newItems]);
+      // Upsert by id: the WS `order.created` event usually arrives BEFORE this
+      // HTTP response (Redis publishes before the response reaches the browser),
+      // so these items may already be in state as partial WS entries. Merging by
+      // id fills them in instead of appending duplicates.
+      setSessionItems((prev) => {
+        const byId = new Map(prev.map((i) => [i.id, i]));
+        for (const item of newItems) {
+          byId.set(item.id, { ...byId.get(item.id), ...item });
+        }
+        return Array.from(byId.values());
+      });
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Lỗi không xác định";
@@ -189,7 +243,6 @@ export default function MenuPage() {
     setCancellingId(itemId);
     try {
       await cancelItem(qrToken, itemId);
-      // Optimistic update
       setSessionItems((prev) =>
         prev.map((i) =>
           i.id === itemId
@@ -217,10 +270,10 @@ export default function MenuPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="qo-page flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500 mx-auto"></div>
-          <p className="mt-3 text-gray-500">Đang tải menu...</p>
+          <div className="qo-spinner mx-auto h-10 w-10 animate-spin rounded-full" />
+          <p className="qo-muted mt-3">Đang tải menu...</p>
         </div>
       </div>
     );
@@ -228,12 +281,12 @@ export default function MenuPage() {
 
   if (error || !data) {
     return (
-      <div className="flex items-center justify-center min-h-screen p-4">
+      <div className="qo-page flex min-h-screen items-center justify-center p-4">
         <div className="text-center">
-          <p className="text-red-500 text-lg font-medium">
+          <p className="text-lg font-semibold text-red-300">
             {error || "Không tìm thấy dữ liệu"}
           </p>
-          <p className="text-gray-500 mt-2">
+          <p className="qo-muted mt-2">
             Vui lòng quét lại mã QR hoặc liên hệ nhân viên.
           </p>
         </div>
@@ -241,98 +294,173 @@ export default function MenuPage() {
     );
   }
 
-  const isSessionEnded = sessionStatus === "closed" || sessionStatus === "abandoned";
+  const currency = data.restaurant.currency;
+  const isSessionEnded =
+    sessionStatus === "closed" || sessionStatus === "abandoned";
 
   return (
-    <div className="min-h-screen pb-24">
-      {/* Header */}
-      <header className="sticky top-0 z-30 bg-white shadow-sm border-b">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">
-              {data.restaurant.name}
-            </h1>
-            <p className="text-sm text-gray-500">{data.table.table_number}</p>
+    <div className="qo-page min-h-screen pb-28">
+      <div className="mx-auto max-w-lg">
+        {/* Header */}
+        <header className="qo-header rounded-b-3xl px-4 py-4">
+          <div className="flex items-center gap-3">
+            {data.restaurant.logo_url ? (
+              <img
+                src={data.restaurant.logo_url}
+                alt={data.restaurant.name}
+                className="h-10 w-10 rounded-xl object-cover"
+              />
+            ) : (
+              <div
+                className="qo-icon-badge flex h-10 w-10 items-center justify-center rounded-xl"
+                aria-hidden="true"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path d="M3 5a1 1 0 011-1h9a1 1 0 011 1v1h1.5a2.5 2.5 0 010 5H14v1a3 3 0 01-3 3H6a3 3 0 01-3-3V5zm11 3v1h1.5a.5.5 0 000-1H14zM2 17a1 1 0 011-1h11a1 1 0 110 2H3a1 1 0 01-1-1z" />
+                </svg>
+              </div>
+            )}
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold">
+                {data.restaurant.name}
+              </h1>
+              <p className="qo-accent-soft text-sm">
+                • Bàn {data.table.table_number}
+              </p>
+            </div>
           </div>
-          {data.restaurant.logo_url && (
-            <img
-              src={data.restaurant.logo_url}
-              alt={data.restaurant.name}
-              className="h-10 w-10 rounded-full object-cover"
+        </header>
+
+        {/* Tabs */}
+        <div className="qo-tabbar sticky top-0 z-30 px-4 py-3 backdrop-blur">
+          <div role="tablist" aria-label="Chế độ xem" className="flex gap-2">
+            <TabButton
+              active={tab === "menu"}
+              onClick={() => setTab("menu")}
+              label="Gọi món"
             />
-          )}
-        </div>
-      </header>
-
-      {/* Session ended notice */}
-      {isSessionEnded && (
-        <div className="max-w-lg mx-auto px-4 mt-4">
-          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm rounded-lg p-3 text-center">
-            {sessionStatus === "closed"
-              ? "Phiên đã kết thúc. Cảm ơn quý khách!"
-              : "Phiên đã hết hạn. Vui lòng liên hệ nhân viên."}
+            <TabButton
+              active={tab === "orders"}
+              onClick={() => setTab("orders")}
+              label="Đơn của tôi"
+              badge={waitingCount}
+            />
           </div>
         </div>
-      )}
 
-      {/* Success toast */}
-      {successMsg && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg text-sm animate-pulse">
-          {successMsg}
-        </div>
-      )}
+        {/* Session ended notice */}
+        {isSessionEnded && (
+          <div className="px-4 pb-1">
+            <div className="qo-notice rounded-xl p-3 text-center text-sm">
+              {sessionStatus === "closed"
+                ? "Phiên đã kết thúc. Cảm ơn quý khách!"
+                : "Phiên đã hết hạn. Vui lòng liên hệ nhân viên."}
+            </div>
+          </div>
+        )}
 
-      {/* Main content */}
-      <main className="max-w-lg mx-auto px-4 py-4 space-y-6">
-        {/* Order status panel (R4.2) */}
-        <OrderStatusPanel
-          items={sessionItems}
-          onCancelItem={handleCancelItem}
-          cancellingId={cancellingId}
-        />
+        {/* Success toast */}
+        {successMsg && (
+          <div
+            role="status"
+            className="qo-toast-success fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-xl px-4 py-2 text-sm shadow-lg backdrop-blur"
+          >
+            {successMsg}
+          </div>
+        )}
 
-        {/* Menu content */}
-        {data.menu.map((category) => (
-          <MenuCategorySection
-            key={category.id}
-            category={category}
-            onAddItem={handleAddItem}
-            cartItems={cart.items}
-          />
-        ))}
-      </main>
+        <main className="space-y-6 px-4 pb-4 pt-1">
+          {tab === "menu" ? (
+            <div role="tabpanel" aria-label="Gọi món" className="space-y-6">
+              <FeaturedCarousel
+                items={featuredItems}
+                currency={currency}
+                cartItems={cart.items}
+                onAddItem={handleAddItem}
+                onOpenImage={setZoomedItem}
+              />
 
-      {/* Call staff FAB (R7.1) — visible when session is open */}
+              {data.menu.map((category) => (
+                <MenuCategorySection
+                  key={category.id}
+                  category={category}
+                  currency={currency}
+                  onAddItem={handleAddItem}
+                  onOpenImage={setZoomedItem}
+                  cartItems={cart.items}
+                />
+              ))}
+            </div>
+          ) : (
+            <div role="tabpanel" aria-label="Đơn của tôi">
+              <MyOrdersPanel
+                items={sessionItems}
+                currency={currency}
+                onCancelItem={handleCancelItem}
+                cancellingId={cancellingId}
+                onBrowseMenu={() => setTab("menu")}
+              />
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Call staff FAB (R7.1) */}
       {!isSessionEnded && <CallStaffButton onCall={handleCallStaff} />}
 
-      {/* Floating cart button */}
-      {cart.totalItems > 0 && !isSessionEnded && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 p-4 bg-white border-t shadow-lg">
-          <button
-            onClick={() => setCartOpen(true)}
-            className="w-full max-w-lg mx-auto flex items-center justify-between bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-5 rounded-xl transition-colors"
-          >
-            <span className="flex items-center gap-2">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" />
-              </svg>
-              <span>Giỏ hàng ({cart.totalItems})</span>
-            </span>
-            <span>{formatPrice(cart.totalAmount, data.restaurant.currency)}</span>
-          </button>
+      {/* Bottom bar: running subtotal + cart */}
+      <div className="qo-bottombar fixed inset-x-0 bottom-0 z-40">
+        <div className="mx-auto flex max-w-lg items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0">
+            <p className="qo-muted text-[11px] font-medium uppercase tracking-wide">
+              Tạm tính đã gọi
+            </p>
+            <p className="qo-accent text-lg font-bold">
+              {formatPrice(orderedSubtotal, currency)}
+            </p>
+          </div>
+
+          {!isSessionEnded && (
+            <button
+              onClick={() => setCartOpen(true)}
+              disabled={cart.totalItems === 0}
+              className="qo-btn-primary flex shrink-0 items-center gap-2 rounded-full px-5 py-2.5 font-bold transition-transform active:scale-95"
+            >
+              <span>Giỏ hàng</span>
+              {cart.totalItems > 0 && (
+                <span className="qo-count-on-amber flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-1.5 text-xs font-bold">
+                  {cart.totalItems}
+                </span>
+              )}
+            </button>
+          )}
         </div>
+      </div>
+
+      {/* Photo lightbox */}
+      {zoomedItem && (
+        <ImageLightbox
+          item={{
+            name: zoomedItem.name,
+            description: zoomedItem.description,
+            price: zoomedItem.price,
+            imageUrl: zoomedItem.image_large_url ?? zoomedItem.image_url,
+          }}
+          currency={currency}
+          onClose={() => setZoomedItem(null)}
+        />
       )}
 
       {/* Cart modal */}
       {cartOpen && (
         <Cart
           items={cart.items}
-          currency={data.restaurant.currency}
+          currency={currency}
           onClose={() => setCartOpen(false)}
           onUpdateQuantity={cart.updateQuantity}
           onUpdateNote={cart.updateNote}
@@ -346,9 +474,36 @@ export default function MenuPage() {
   );
 }
 
-function formatPrice(amount: number, currency: string): string {
-  if (currency === "VND") {
-    return amount.toLocaleString("vi-VN") + "đ";
-  }
-  return amount.toLocaleString() + " " + currency;
+function TabButton({
+  active,
+  onClick,
+  label,
+  badge,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  badge?: number;
+}) {
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`flex flex-1 items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold transition-colors ${
+        active ? "qo-tab-active" : "qo-tab"
+      }`}
+    >
+      <span>{label}</span>
+      {badge !== undefined && badge > 0 && (
+        <span
+          className={`flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${
+            active ? "qo-count-on-amber" : "qo-count-on-dark"
+          }`}
+        >
+          {badge}
+        </span>
+      )}
+    </button>
+  );
 }

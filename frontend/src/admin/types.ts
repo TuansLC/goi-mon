@@ -21,6 +21,8 @@ export interface MenuItem {
   category_id: string | null;
   description: string | null;
   image_url: string | null;
+  image_large_url: string | null;
+  is_featured: boolean;
   sort_order: number;
   is_available: boolean;
   is_active: boolean;

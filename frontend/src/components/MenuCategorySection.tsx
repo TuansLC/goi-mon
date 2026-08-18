@@ -1,20 +1,28 @@
 import type { MenuCategory, MenuItem, CartItem } from "../types";
+import { formatPrice } from "../format";
+import ItemImage from "./ItemImage";
 
 interface Props {
   category: MenuCategory;
+  currency: string;
   onAddItem: (item: MenuItem) => void;
+  onOpenImage: (item: MenuItem) => void;
   cartItems: CartItem[];
 }
 
 export default function MenuCategorySection({
   category,
+  currency,
   onAddItem,
+  onOpenImage,
   cartItems,
 }: Props) {
   return (
     <section>
-      <h2 className="text-base font-bold text-gray-800 mb-3 border-l-4 border-orange-400 pl-3">
+      <h2 className="qo-accent mb-2.5 flex items-center gap-2 text-sm font-bold uppercase tracking-wide">
+        <CategoryIcon name={category.name} />
         {category.name}
+        <span className="qo-divider ml-1 h-px flex-1" aria-hidden="true" />
       </h2>
       <div className="space-y-2">
         {category.items.map((item) => {
@@ -23,8 +31,11 @@ export default function MenuCategorySection({
             <MenuItemCard
               key={item.id}
               item={item}
+              currency={currency}
+              categoryName={category.name}
               quantityInCart={inCart?.quantity ?? 0}
               onAdd={() => onAddItem(item)}
+              onOpenImage={() => onOpenImage(item)}
             />
           );
         })}
@@ -33,72 +44,106 @@ export default function MenuCategorySection({
   );
 }
 
-interface MenuItemCardProps {
-  item: MenuItem;
-  quantityInCart: number;
-  onAdd: () => void;
+/** Drink categories get a cup glyph, everything else a bowl (name heuristic). */
+function CategoryIcon({ name }: { name: string }) {
+  const isDrink = /uống|bia|nước|drink|beverage/i.test(name);
+
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      {isDrink ? (
+        <path d="M6 2h8a1 1 0 011 1v2a1 1 0 01-1 1h-.09l-.72 10.07A2 2 0 0111.2 18H8.8a2 2 0 01-1.99-1.86L6.09 6H6a1 1 0 01-1-1V3a1 1 0 011-1zm1.6 6l.63 8h3.54l.63-8H7.6z" />
+      ) : (
+        <path d="M3 8h14a1 1 0 011 1 8 8 0 01-4 6.93V17a1 1 0 01-1 1H7a1 1 0 01-1-1v-1.07A8 8 0 012 9a1 1 0 011-1zm3.4-5.2a1 1 0 011.4-.2c.5.37.8.9.9 1.47.08.5-.02.98-.2 1.4a1 1 0 01-1.83-.8c.05-.12.07-.24.05-.35-.02-.1-.06-.18-.12-.22a1 1 0 01-.2-1.3zm4 0a1 1 0 011.4-.2c.5.37.8.9.9 1.47.08.5-.02.98-.2 1.4a1 1 0 01-1.83-.8c.05-.12.07-.24.05-.35-.02-.1-.06-.18-.12-.22a1 1 0 01-.2-1.3z" />
+      )}
+    </svg>
+  );
 }
 
-function MenuItemCard({ item, quantityInCart, onAdd }: MenuItemCardProps) {
+interface MenuItemCardProps {
+  item: MenuItem;
+  currency: string;
+  categoryName: string;
+  quantityInCart: number;
+  onAdd: () => void;
+  onOpenImage: () => void;
+}
+
+function MenuItemCard({
+  item,
+  currency,
+  categoryName,
+  quantityInCart,
+  onAdd,
+  onOpenImage,
+}: MenuItemCardProps) {
   const price = parseFloat(item.price);
   const unavailable = !item.is_available;
 
   return (
     <div
-      className={`flex items-center justify-between p-3 bg-white rounded-lg border ${
-        unavailable ? "opacity-60 border-gray-200" : "border-gray-100 shadow-sm"
+      className={`flex items-center gap-3 rounded-xl p-3 ${
+        unavailable ? "qo-card-off opacity-70" : "qo-card"
       }`}
     >
-      <div className="flex-1 min-w-0">
+      <ItemImage
+        src={item.image_url}
+        alt={item.name}
+        categoryName={categoryName}
+        onClick={onOpenImage}
+      />
+
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-gray-900 truncate">
-            {item.name}
-          </span>
+          <span className="truncate font-semibold">{item.name}</span>
+          {/* Sold-out items stay listed, just not orderable (R3.2). */}
           {unavailable && (
-            <span className="shrink-0 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium">
+            <span className="qo-chip-off shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold">
               Hết hàng
             </span>
           )}
         </div>
+
         {item.description && (
-          <p className="text-xs text-gray-500 mt-0.5 truncate">
-            {item.description}
-          </p>
+          <p className="qo-muted mt-0.5 truncate text-xs">{item.description}</p>
         )}
-        <p className="text-sm font-semibold text-orange-600 mt-1">
-          {price.toLocaleString("vi-VN")}đ
+
+        <p className="qo-accent mt-1 text-sm font-bold">
+          {formatPrice(price, currency)}
         </p>
       </div>
 
-      <div className="ml-3 shrink-0">
-        {unavailable ? (
-          <div className="w-9 h-9" />
-        ) : (
-          <button
-            onClick={onAdd}
-            className="relative w-9 h-9 flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white rounded-full transition-colors"
-            aria-label={`Thêm ${item.name} vào giỏ`}
+      {!unavailable && (
+        <button
+          onClick={onAdd}
+          className="qo-btn-add relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
+          aria-label={`Thêm ${item.name} vào giỏ`}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            {quantityInCart > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full font-bold">
-                {quantityInCart}
-              </span>
-            )}
-          </button>
-        )}
-      </div>
+            <path
+              fillRule="evenodd"
+              d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+              clipRule="evenodd"
+            />
+          </svg>
+          {quantityInCart > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white">
+              {quantityInCart}
+            </span>
+          )}
+        </button>
+      )}
     </div>
   );
 }

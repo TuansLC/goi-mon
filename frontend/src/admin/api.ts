@@ -121,6 +121,7 @@ export async function updateMenuItem(
     is_available?: boolean;
     is_active?: boolean;
     image_url?: string;
+    is_featured?: boolean;
     sort_order?: number;
     description?: string;
   }
@@ -129,6 +130,39 @@ export async function updateMenuItem(
     method: "PATCH",
     headers: authHeaders(token),
     body: JSON.stringify(data),
+  });
+  return handleResponse<MenuItem>(res);
+}
+
+/**
+ * Upload a photo for a menu item.
+ *
+ * Sent as multipart/form-data — no explicit Content-Type header, the browser has
+ * to set it together with the multipart boundary.
+ */
+export async function uploadMenuItemImage(
+  token: string,
+  id: string,
+  file: File
+): Promise<MenuItem> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${BASE_URL}/admin/menu-items/${id}/image`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  return handleResponse<MenuItem>(res);
+}
+
+export async function deleteMenuItemImage(
+  token: string,
+  id: string
+): Promise<MenuItem> {
+  const res = await fetch(`${BASE_URL}/admin/menu-items/${id}/image`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
   });
   return handleResponse<MenuItem>(res);
 }

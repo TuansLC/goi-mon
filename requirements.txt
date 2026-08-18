@@ -9,6 +9,9 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 apscheduler==3.11.0
 qrcode[pil]==8.0
+# Pillow arrives via qrcode[pil] but qorder_api.images depends on it directly.
+pillow>=10.4,<12
+python-multipart==0.0.20
 gspread==6.1.4
 google-auth==2.37.0
 boto3==1.35.0
