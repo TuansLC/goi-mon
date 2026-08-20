@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stress test giờ cao điểm — màn hình bếp QOrder</title>
+<style>
+/* ============================================================
+   STRESS TEST — đổ nhiều món / nhiều bàn cùng lúc
+   Kéo thanh điều khiển để xem board vỡ ở đâu.
+   ============================================================ */
+:root{
+  --bg:#0f1115; --panel:#171b22; --card:#1b202a;
+  --border:#2b323f; --text:#f1f5f9; --dim:#94a3b8; --mute:#64748b;
+  --u0:#22c55e; --u1:#eab308; --u2:#f97316; --u3:#ef4444; --instant:#38bdf8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+
+/* ---------- Thanh điều khiển (chỉ có trong bản thử, không phải UI thật) ---------- */
+.ctl{position:sticky;top:0;z-index:50;background:#101827;border-bottom:2px solid #1e3a5f;
+  padding:10px 14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;font-size:14px}
+.ctl .tag{background:#1e3a5f;color:#93c5fd;padding:3px 9px;border-radius:6px;font-weight:800;font-size:12px}
+.ctl label{display:flex;align-items:center;gap:8px;color:#cbd5e1;white-space:nowrap}
+.ctl input[type=range]{width:130px}
+.ctl .val{font-variant-numeric:tabular-nums;font-weight:800;color:#fff;min-width:26px;text-align:right}
+.ctl select,.ctl button{background:#1f2937;color:#f1f5f9;border:1px solid #374151;
+  border-radius:8px;min-height:34px;padding:0 10px;font-size:14px;cursor:pointer}
+.ctl button:hover{background:#374151}
+.ctl button.go{background:#1d4ed8;border-color:#1e40af;font-weight:700}
+.ctl button.go:hover{background:#2563eb}
+
+/* ---------- Bảng số liệu ---------- */
+.stats{display:flex;flex-wrap:wrap;gap:14px;padding:9px 14px;background:#151a22;
+  border-bottom:1px solid var(--border);font-size:14px;color:var(--dim)}
+.stats b{color:#fff;font-variant-numeric:tabular-nums}
+.stats .bad{color:#fca5a5}
+.stats .warn{color:#fbbf24}
+
+/* ---------- Header thật ---------- */
+.header{display:flex;align-items:center;gap:10px;padding:9px 14px;
+  background:var(--panel);border-bottom:1px solid var(--border)}
+.header h1{font-size:19px;margin:0;font-weight:700;white-space:nowrap}
+.header .sp{flex:1}
+.conn{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;
+  background:#14261a;border:1px solid #24603a;font-size:14px;color:#86efac;white-space:nowrap}
+.conn .dot{width:8px;height:8px;border-radius:50%;background:#22c55e}
+.btn{min-height:44px;min-width:44px;padding:0 13px;border-radius:10px;border:1px solid var(--border);
+  background:#232a36;color:var(--text);font-size:15px;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
+.btn:hover{background:#2c3442}
+.btn-primary{background:#1d4ed8;border-color:#1e40af}
+.btn .badge{background:#f59e0b;color:#1c1207;border-radius:999px;padding:1px 8px;font-size:13px;font-weight:800}
+
+/* ---------- Khay gọi NV ---------- */
+.calltray{display:flex;align-items:center;gap:9px;padding:9px 14px;background:#2a1e3d;
+  border-bottom:1px solid #4c3575;overflow-x:auto}
+.calltray .lb{font-size:14px;font-weight:700;color:#d8b4fe;white-space:nowrap}
+.callchip{display:inline-flex;align-items:center;gap:9px;background:#3b2a54;border:1px solid #6d4aa8;
+  border-radius:11px;padding:5px 5px 5px 11px;white-space:nowrap}
+.callchip .tbl{font-size:17px;font-weight:800}
+.callchip .min{font-size:14px;color:#cdb4f0}
+.callchip button{min-height:38px;padding:0 11px;border-radius:8px;border:none;background:#16a34a;
+  color:#fff;font-weight:700;font-size:13px;cursor:pointer}
+.callmore{font-size:14px;color:#cdb4f0;font-weight:700;padding:0 6px;white-space:nowrap}
+
+/* ---------- Board ---------- */
+.board{padding:12px 14px 80px;display:grid;gap:12px;align-items:start;align-content:start}
+.board.cols{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+/* chế độ cột thật (masonry giả bằng columns) — thẻ cao tự chảy sang cột sau */
+.board.flow{display:block;column-width:300px;column-gap:12px}
+.board.flow .ticket{break-inside:avoid;margin:0 0 12px}
+
+/* ---------- Thẻ ---------- */
+.ticket{background:var(--card);border:1px solid var(--border);border-left:7px solid var(--u0);
+  border-radius:13px;overflow:hidden;display:flex;flex-direction:column}
+.ticket.u0{border-left-color:var(--u0)}
+.ticket.u1{border-left-color:var(--u1);background:#241f10;border-color:#5c4a12}
+.ticket.u2{border-left-color:var(--u2);background:#2a1c10;border-color:#7c3d10}
+.ticket.u3{border-left-color:var(--u3);background:#2c1416;border-color:#992a2a}
+.ticket.fresh{outline:3px solid #38bdf8;outline-offset:1px}
+
+.t-head{display:flex;align-items:center;gap:8px;padding:10px 12px 7px}
+.t-table{font-size:23px;font-weight:800;line-height:1}
+.t-batch{font-size:12px;font-weight:800;background:#374151;color:#e5e7eb;
+  border-radius:6px;padding:2px 7px;letter-spacing:.3px}
+.t-head .sp{flex:1}
+.t-clock{font-variant-numeric:tabular-nums;font-size:21px;font-weight:800;line-height:1;
+  padding:4px 8px;border-radius:8px;background:#00000040}
+.u0 .t-clock{color:#86efac}.u1 .t-clock{color:#fde047}
+.u2 .t-clock{color:#fdba74}.u3 .t-clock{color:#fca5a5}
+.t-state{padding:0 12px 8px;font-size:14px;font-weight:700}
+.u0 .t-state{color:#86efac}.u1 .t-state{color:#fde047}
+.u2 .t-state{color:#fdba74}.u3 .t-state{color:#fca5a5}
+
+/* ---------- Món ---------- */
+.items{border-top:1px solid #ffffff14}
+.item{display:flex;align-items:flex-start;gap:10px;padding:8px 12px;min-height:50px;
+  border-bottom:1px solid #ffffff0d}
+.item:last-child{border-bottom:none}
+.tick{flex:0 0 auto;width:44px;height:44px;border-radius:10px;border:2px solid #4b5563;
+  background:#0000002e;color:#6b7280;font-size:19px;font-weight:800;cursor:pointer;
+  display:flex;align-items:center;justify-content:center}
+.tick:hover{border-color:#22c55e;color:#22c55e}
+.ib{flex:1 1 auto;min-width:0}
+.iname{font-size:18px;font-weight:700;line-height:1.25;display:flex;align-items:baseline;gap:6px}
+.iname .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qty{font-size:18px;font-weight:800;color:#fff;background:#374151;border-radius:6px;
+  padding:0 6px;flex:0 0 auto}
+.inote{font-size:15px;color:#fbbf24;margin-top:2px;font-style:italic}
+.imeta{flex:0 0 auto;text-align:right;font-size:15px;font-weight:700;
+  font-variant-numeric:tabular-nums;padding-top:2px;white-space:nowrap;line-height:1.3}
+.m0{color:#94a3b8}.m1{color:#fde047}.m2{color:#fdba74}.m3{color:#fca5a5}
+.mI{color:var(--instant)}
+.item.done{opacity:.4}
+.item.done .tick{border-color:#16a34a;background:#14311f;color:#4ade80;cursor:default}
+
+.more-items{width:100%;min-height:44px;background:#0000003d;border:none;
+  border-top:1px dashed #4b5563;color:#93c5fd;font-size:15px;font-weight:700;cursor:pointer}
+.more-items:hover{background:#00000060}
+
+.t-foot{display:flex;gap:8px;padding:9px 12px 11px;border-top:1px solid #ffffff14}
+.t-foot .btn-primary{flex:1;min-height:46px;font-size:15px}
+
+/* ---------- Cảnh báo tràn ---------- */
+.overflow-note{margin:0 14px 16px;padding:12px 14px;border-radius:11px;
+  background:#2a1c10;border:1px solid #7c3d10;color:#fdba74;font-size:15px;font-weight:600}
+
+.legend{padding:14px;background:var(--panel);border-top:1px solid var(--border);
+  font-size:14px;color:var(--dim);line-height:1.7}
+.legend h3{color:var(--text);font-size:15px;margin:0 0 8px}
+.legend code{background:#0000004d;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<!-- ================= THANH ĐIỀU KHIỂN (chỉ dùng để thử) ================= -->
+<div class="ctl">
+  <span class="tag">BẢNG THỬ</span>
+
+  <label>Số bàn
+    <input type="range" id="cTables" min="1" max="30" value="12">
+    <span class="val" id="vTables">12</span>
+  </label>
+
+  <label>Món / đợt gọi
+    <input type="range" id="cItems" min="1" max="16" value="4">
+    <span class="val" id="vItems">4</span>
+  </label>
+
+  <label>Đợt gọi / bàn
+    <input type="range" id="cBatch" min="1" max="4" value="1">
+    <span class="val" id="vBatch">1</span>
+  </label>
+
+  <label>Nhóm thẻ theo
+    <select id="cGroup">
+      <option value="order">Đợt gọi (1 order = 1 thẻ)</option>
+      <option value="session">Cả bàn (gộp mọi đợt)</option>
+    </select>
+  </label>
+
+  <label>Bố cục
+    <select id="cLayout">
+      <option value="flow">Cột chảy (thẻ cao tự sang cột sau)</option>
+      <option value="cols">Lưới đều</option>
+    </select>
+  </label>
+
+  <label>Gấp món khi dài
+    <select id="cFold">
+      <option value="6">Hiện 6 món đầu</option>
+      <option value="0">Hiện hết</option>
+    </select>
+  </label>
+
+  <button class="go" id="bFire">⚡ Đổ thêm 1 đợt</button>
+  <button id="bRush">🔥 Cao điểm (20 bàn × 8 món)</button>
+  <button id="bReset">Tạo lại</button>
+</div>
+
+<!-- ================= SỐ LIỆU ================= -->
+<div class="stats" id="stats"></div>
+
+<!-- ================= HEADER THẬT ================= -->
+<div class="header">
+  <h1>🍳 Bếp — quan-com-tam</h1>
+  <div class="conn"><span class="dot"></span><span>Đã kết nối</span></div>
+  <div class="sp"></div>
+  <button class="btn">↩ Hoàn tác <span class="badge">3</span></button>
+  <button class="btn">🔄</button>
+  <button class="btn">Đăng xuất</button>
+</div>
+
+<!-- ================= KHAY GỌI NV ================= -->
+<div class="calltray" id="calltray"></div>
+
+<!-- ================= CẢNH BÁO ================= -->
+<div id="notes"></div>
+
+<!-- ================= BOARD ================= -->
+<div class="board flow" id="board"></div>
+
+<div class="legend">
+  <h3>Đọc kết quả thử này thế nào</h3>
+  <p style="margin:0">
+    Kéo <b>Món / đợt gọi</b> lên 12–16 để thấy một bàn gọi cả mâm. Đổi <b>Nhóm thẻ theo</b> sang
+    <b>Cả bàn</b> để thấy thẻ cao vọt khi một bàn gọi 3–4 đợt. Bấm <b>⚡ Đổ thêm 1 đợt</b> để xem
+    thẻ mới xuất hiện ở đâu — thẻ mới có viền xanh 4 giây, và <b>không</b> đẩy các thẻ đang thao tác.
+    Bấm <b>🔥 Cao điểm</b> để nhảy thẳng tới 20 bàn.
+  </p>
+</div>
+
+<script>
+/* ============================================================
+   DỮ LIỆU GIẢ
+   ============================================================ */
+const DISHES = [
+  ["Bún bò Huế",12],["Cơm tấm sườn bì",10],["Phở bò tái",12],["Bò kho bánh mì",15],
+  ["Canh chua cá bông lau",20],["Gỏi cuốn tôm thịt",10],["Chả giò rế",12],["Nem nướng Nha Trang",15],
+  ["Mì xào bò",10],["Cá kho tộ",25],["Rau muống xào tỏi",8],["Trứng chiên thịt bằm",6],
+  ["Cơm chiên dương châu",14],["Lẩu thái hải sản",25],["Sườn nướng mật ong",18],
+  ["Bánh xèo miền Trung",16],["Hủ tiếu Nam Vang",12],["Cháo gà xé",18],
+  ["Trà đá",0],["Bia Saigon",0],["Nước suối",0],["Nước mía",0],["Coca",0],["Trà chanh",0]
+];
+const NOTES = [null,null,null,null,"không hành","ít mỡ","thêm ớt","không rau thơm",
+  "ít đường","mang nước mắm riêng","không cay","chia 2 đĩa"];
+
+/* LCG để kết quả tái lập được */
+let seed = 20260820;
+function rnd(){ seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+function ri(a,b){ return a + Math.floor(rnd()*(b-a+1)); }
+function pick(arr){ return arr[ri(0,arr.length-1)]; }
+
+/* ============================================================
+   TRẠNG THÁI
+   ============================================================ */
+let S = { tables:12, items:4, batches:1, group:"order", layout:"flow", fold:6 };
+let ORDERS = [];   // {oid, table, batch, ago, items:[{id,qty,name,prep,note,done}]}
+let CALLS  = [];
+let uid = 1;
+
+function genItems(n){
+  const out = [];
+  for (let i=0;i<n;i++){
+    const [name,prep] = pick(DISHES);
+    out.push({ id:uid++, qty:ri(1,4), name, prep, note:pick(NOTES), done: rnd()<0.12 });
+  }
+  return out;
+}
+
+function generate(){
+  seed = 20260820;
+  ORDERS = [];
+  const labels = [];
+  for (let i=1;i<=S.tables;i++) labels.push("Bàn "+i);
+
+  labels.forEach(lbl => {
+    const nb = ri(1, S.batches);
+    // đợt đầu cũ nhất, các đợt sau mới hơn
+    let ago = ri(60, 1900);
+    for (let b=1;b<=nb;b++){
+      const n = Math.max(1, ri(Math.ceil(S.items/2), S.items));
+      ORDERS.push({ oid:uid++, table:lbl, batch:b, total:nb, ago, items:genItems(n), fresh:false });
+      ago = Math.max(20, ago - ri(200, 700));
+    }
+  });
+
+  // gọi nhân viên: ~25% số bàn
+  CALLS = [];
+  const nc = Math.max(0, Math.round(S.tables*0.25));
+  for (let i=0;i<nc;i++) CALLS.push({ table:"Bàn "+ri(1,S.tables), ago:ri(15,400) });
+  CALLS.sort((a,b)=>b.ago-a.ago);
+}
+
+/* ============================================================
+   MỨC KHẨN CẤP
+   ============================================================ */
+function levelOf(it, ago){
+  if (it.prep === 0) return null;              // món phục vụ ngay
+  const r = (ago/60) / it.prep;
+  if (r < 1)   return 0;
+  if (r < 1.5) return 1;
+  if (r < 2)   return 2;
+  return 3;
+}
+function cardLevel(items, ago){
+  let mx = 0;
+  items.filter(i=>!i.done).forEach(i=>{ const l = levelOf(i,ago); if (l!==null && l>mx) mx=l; });
+  return mx;
+}
+const STATE_TXT = ["Đúng hạn","Chớm trễ","Trễ","Trễ nặng"];
+function mm(s){ return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0"); }
+
+/* ============================================================
+   GOM THẺ
+   ============================================================ */
+function buildCards(){
+  if (S.group === "order"){
+    return ORDERS.map(o => ({
+      key:"o"+o.oid, table:o.table,
+      batchTxt: o.total>1 ? ("đợt "+o.batch+"/"+o.total) : null,
+      ago:o.ago, items:o.items, fresh:o.fresh
+    }));
+  }
+  // gộp cả bàn
+  const by = new Map();
+  ORDERS.forEach(o=>{
+    if (!by.has(o.table)) by.set(o.table, { key:"t"+o.table, table:o.table, batchTxt:null,
+      ago:0, items:[], fresh:false, nb:0 });
+    const c = by.get(o.table);
+    c.ago = Math.max(c.ago, o.ago);
+    c.nb += 1;
+    // mỗi món mang theo ago của đợt nó thuộc về
+    o.items.forEach(it => c.items.push(Object.assign({}, it, { _ago:o.ago })));
+    c.fresh = c.fresh || o.fresh;
+  });
+  const arr = [...by.values()];
+  arr.forEach(c => { if (c.nb>1) c.batchTxt = c.nb+" đợt"; });
+  return arr;
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const expanded = new Set();
+
+function render(){
+  const board = document.getElementById("board");
+  board.className = "board " + S.layout;
+
+  let cards = buildCards();
+  cards.forEach(c => c._lv = cardLevel(c.items, c.ago));
+  // trễ nhất trước, rồi cũ nhất trước, rồi tên bàn cho thứ tự xác định
+  cards.sort((a,b)=> b._lv - a._lv || b.ago - a.ago || a.table.localeCompare(b.table));
+
+  board.innerHTML = "";
+  let tallest = 0, totalItems = 0, lateItems = 0;
+
+  cards.forEach(c => {
+    const pend = c.items.filter(i=>!i.done);
+    totalItems += pend.length;
+    pend.forEach(i => { const l = levelOf(i, i._ago ?? c.ago); if (l!==null && l>=1) lateItems++; });
+
+    const el = document.createElement("div");
+    el.className = "ticket u"+c._lv + (c.fresh ? " fresh" : "");
+
+    /* --- head --- */
+    const head = document.createElement("div");
+    head.className = "t-head";
+    head.innerHTML =
+      '<span class="t-table">'+c.table+'</span>' +
+      (c.batchTxt ? '<span class="t-batch">'+c.batchTxt+'</span>' : '') +
+      '<span class="sp"></span>' +
+      '<span class="t-clock">'+mm(c.ago)+'</span>';
+    el.appendChild(head);
+
+    const st = document.createElement("div");
+    st.className = "t-state";
+    st.textContent = STATE_TXT[c._lv] + " · gọi " + Math.floor(c.ago/60) + " phút trước";
+    el.appendChild(st);
+
+    /* --- items --- */
+    const wrap = document.createElement("div");
+    wrap.className = "items";
+
+    const isOpen = expanded.has(c.key);
+    const limit  = (S.fold === 0 || isOpen) ? c.items.length : Math.min(S.fold, c.items.length);
+
+    // món chưa ra lên trước, trong đó trễ nhất trước
+    const ordered = [...c.items].sort((a,b)=>{
+      if (a.done !== b.done) return a.done ? 1 : -1;
+      const la = levelOf(a, a._ago ?? c.ago), lb = levelOf(b, b._ago ?? c.ago);
+      return (lb===null?-1:lb) - (la===null?-1:la);
+    });
+
+    ordered.slice(0, limit).forEach(it => {
+      const ago = it._ago ?? c.ago;
+      const lv  = levelOf(it, ago);
+      const row = document.createElement("div");
+      row.className = "item" + (it.done ? " done" : "");
+
+      let meta;
+      if (it.done)            meta = '<span class="imeta m0">đã ra</span>';
+      else if (lv === null)   meta = '<span class="imeta mI">rót ngay</span>';
+      else {
+        const mins = Math.floor(ago/60);
+        const diff = mins - it.prep;
+        const tail = diff >= 0 ? ("trễ "+diff+"′") : ("còn "+(-diff)+"′");
+        meta = '<span class="imeta m'+lv+'">'+mins+' phút<br><span style="font-weight:600">'+tail+'</span></span>';
+      }
+
+      row.innerHTML =
+        '<button class="tick">✓</button>' +
+        '<div class="ib">' +
+          '<div class="iname"><span class="qty">'+it.qty+'</span><span class="nm">'+it.name+'</span></div>' +
+          (it.note ? '<div class="inote">'+it.note+'</div>' : '') +
+        '</div>' + meta;
+
+      row.querySelector(".tick").addEventListener("click", () => {
+        if (it.done) return;
+        it.done = true; render();
+      });
+      wrap.appendChild(row);
+    });
+    el.appendChild(wrap);
+
+    if (limit < c.items.length || (isOpen && S.fold !== 0 && c.items.length > S.fold)){
+      const b = document.createElement("button");
+      b.className = "more-items";
+      b.textContent = isOpen ? "▲ Thu gọn" : ("▼ còn "+(c.items.length-limit)+" món nữa");
+      b.onclick = () => { isOpen ? expanded.delete(c.key) : expanded.add(c.key); render(); };
+      el.appendChild(b);
+    }
+
+    /* --- foot --- */
+    const foot = document.createElement("div");
+    foot.className = "t-foot";
+    foot.innerHTML =
+      '<button class="btn btn-primary">✓ Xong cả bàn ('+pend.length+')</button>' +
+      '<button class="btn">⋯</button>';
+    el.appendChild(foot);
+
+    board.appendChild(el);
+    tallest = Math.max(tallest, el.offsetHeight);
+  });
+
+  /* --- khay gọi NV --- */
+  const ct = document.getElementById("calltray");
+  if (CALLS.length === 0){ ct.style.display = "none"; }
+  else {
+    ct.style.display = "flex";
+    const show = CALLS.slice(0,3), rest = CALLS.length-3;
+    ct.innerHTML = '<span class="lb">🔔 Đang gọi nhân viên</span>' +
+      show.map(c =>
+        '<div class="callchip"><span class="tbl">'+c.table+'</span>' +
+        '<span class="min">'+Math.floor(c.ago/60)+' phút</span>' +
+        '<button>✓ Nhận</button></div>').join("") +
+      (rest>0 ? '<span class="callmore">+'+rest+' bàn khác ›</span>' : "");
+  }
+
+  /* --- số liệu --- */
+  const vh = window.innerHeight;
+  document.getElementById("stats").innerHTML =
+    'Thẻ: <b>'+cards.length+'</b>' +
+    ' · Món chưa ra: <b>'+totalItems+'</b>' +
+    ' · Món trễ: <b class="'+(lateItems>0?'bad':'')+'">'+lateItems+'</b>' +
+    ' · Thẻ cao nhất: <b class="'+(tallest>vh?'bad':(tallest>vh*0.7?'warn':''))+'">'+tallest+'px</b>' +
+    ' (màn hình '+vh+'px)' +
+    ' · Gọi NV: <b>'+CALLS.length+'</b>';
+
+  /* --- cảnh báo --- */
+  const notes = document.getElementById("notes");
+  notes.innerHTML = "";
+  if (tallest > vh){
+    notes.innerHTML = '<div class="overflow-note">⚠️ Có thẻ cao '+tallest+'px, vượt chiều cao màn hình ('+vh+'px). ' +
+      'Nhân viên phải cuộn mới thấy hết một bàn — đây là lúc cần gấp món hoặc tách theo đợt gọi.</div>';
+  } else if (cards.length > 120){
+    notes.innerHTML = '<div class="overflow-note">⚠️ '+cards.length+' thẻ — vượt mốc 120 thẻ.</div>';
+  }
+}
+
+/* ============================================================
+   ĐIỀU KHIỂN
+   ============================================================ */
+function bindRange(id, vid, key){
+  const el = document.getElementById(id);
+  el.addEventListener("input", () => {
+    document.getElementById(vid).textContent = el.value;
+    S[key] = +el.value;
+    expanded.clear();
+    generate(); render();
+  });
+}
+bindRange("cTables","vTables","tables");
+bindRange("cItems","vItems","items");
+bindRange("cBatch","vBatch","batches");
+
+document.getElementById("cGroup").addEventListener("change", e => {
+  S.group = e.target.value; expanded.clear(); render();
+});
+document.getElementById("cLayout").addEventListener("change", e => {
+  S.layout = e.target.value; render();
+});
+document.getElementById("cFold").addEventListener("change", e => {
+  S.fold = +e.target.value; expanded.clear(); render();
+});
+
+/* Đổ thêm một đợt gọi mới — mô phỏng order.created qua WebSocket */
+document.getElementById("bFire").addEventListener("click", () => {
+  ORDERS.forEach(o => o.fresh = false);
+  const tbl = "Bàn " + ri(1, S.tables);
+  const nb  = ORDERS.filter(o => o.table === tbl).length + 1;
+  ORDERS.filter(o => o.table === tbl).forEach(o => o.total = nb);
+  ORDERS.push({ oid:uid++, table:tbl, batch:nb, total:nb, ago:3,
+                items:genItems(Math.max(1, ri(2, S.items))), fresh:true });
+  render();
+  setTimeout(() => { ORDERS.forEach(o => o.fresh = false); render(); }, 4000);
+});
+
+document.getElementById("bRush").addEventListener("click", () => {
+  S.tables = 20; S.items = 8; S.batches = 2;
+  document.getElementById("cTables").value = 20; document.getElementById("vTables").textContent = 20;
+  document.getElementById("cItems").value  = 8;  document.getElementById("vItems").textContent  = 8;
+  document.getElementById("cBatch").value  = 2;  document.getElementById("vBatch").textContent  = 2;
+  expanded.clear(); generate(); render();
+});
+
+document.getElementById("bReset").addEventListener("click", () => {
+  expanded.clear(); generate(); render();
+});
+
+window.addEventListener("resize", render);
+
+/* đồng hồ chạy: mỗi giây +1 vào ago rồi vẽ lại (chỉ để thấy nó sống) */
+setInterval(() => {
+  ORDERS.forEach(o => o.ago += 1);
+  CALLS.forEach(c => c.ago += 1);
+}, 1000);
+setInterval(render, 5000);
+
+generate(); render();
+</script>
+</body>
+</html>

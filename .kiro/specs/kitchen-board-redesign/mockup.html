@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phác thảo màn hình bếp — QOrder</title>
+<style>
+/* ============================================================
+   Phác thảo giao diện màn bếp (KDS) — bản tĩnh, không phụ thuộc build
+   Mô hình: 1 thẻ = 1 bàn (ticket), trong thẻ tích từng món
+   Tín hiệu khẩn cấp = màu nền + số phút (KHÔNG nhấp nháy)
+   ============================================================ */
+
+:root {
+  --bg:        #0f1115;
+  --panel:     #171b22;
+  --card:      #1b202a;
+  --border:    #2b323f;
+  --text:      #f1f5f9;
+  --text-dim:  #94a3b8;
+  --text-mute: #64748b;
+
+  /* thang khẩn cấp: đúng hạn -> trễ nặng */
+  --u0: #22c55e;   /* xanh  — đúng hạn */
+  --u1: #eab308;   /* vàng  — chớm trễ */
+  --u2: #f97316;   /* cam   — trễ */
+  --u3: #ef4444;   /* đỏ    — trễ nặng */
+  --instant: #38bdf8; /* xanh nhạt — món phục vụ ngay */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Khung màn hình ---------- */
+.screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 1. Thanh đầu (luôn hiển thị) ---------- */
+.header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.header h1 {
+  font-size: 20px;
+  margin: 0;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.header .spacer { flex: 1; }
+
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #14261a;
+  border: 1px solid #24603a;
+  font-size: 15px;
+  color: #86efac;
+  white-space: nowrap;
+}
+.conn .dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #22c55e;
+}
+/* biến thể mất kết nối — đổi class để xem */
+.conn.off { background:#2a1616; border-color:#7f1d1d; color:#fca5a5; }
+.conn.off .dot { background:#ef4444; }
+
+.btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #232a36;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.btn:hover { background: #2c3442; }
+.btn-primary { background:#1d4ed8; border-color:#1e40af; }
+.btn-primary:hover { background:#2563eb; }
+.btn-danger  { background:#b91c1c; border-color:#991b1b; }
+.btn-danger:hover { background:#dc2626; }
+.btn-ghost   { background:transparent; }
+.btn .badge {
+  background:#f59e0b; color:#1c1207;
+  border-radius:999px; padding:1px 8px;
+  font-size:13px; font-weight:800;
+}
+
+/* ---------- 2. Khay gọi nhân viên (trong luồng, chiều cao cố định) ---------- */
+.calltray {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #2a1e3d;
+  border-bottom: 1px solid #4c3575;
+  overflow-x: auto;
+}
+.calltray .label {
+  font-size: 15px; font-weight: 700; color: #d8b4fe;
+  white-space: nowrap; padding-right: 4px;
+}
+.callchip {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: #3b2a54; border: 1px solid #6d4aa8;
+  border-radius: 12px; padding: 6px 6px 6px 12px;
+  white-space: nowrap;
+}
+.callchip .tbl { font-size: 18px; font-weight: 800; }
+.callchip .min { font-size: 15px; color: #cdb4f0; }
+.callchip button {
+  min-height: 40px; padding: 0 12px;
+  border-radius: 9px; border: none;
+  background:#16a34a; color:#fff; font-weight:700; font-size:14px;
+  cursor:pointer;
+}
+.callmore {
+  font-size:15px; color:#cdb4f0; font-weight:700;
+  padding: 0 6px; white-space: nowrap;
+}
+
+/* ---------- 3. Vùng thẻ bàn ---------- */
+.board {
+  flex: 1 1 auto;
+  padding: 14px 16px 90px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 14px;
+  align-content: start;
+}
+
+/* ---------- Thẻ bàn (ticket) ---------- */
+.ticket {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 7px solid var(--u0);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+/* nền nhuộm nhẹ theo mức trễ — kênh 1 */
+.ticket.u0 { border-left-color: var(--u0); }
+.ticket.u1 { border-left-color: var(--u1); background: #241f10; border-color:#5c4a12; }
+.ticket.u2 { border-left-color: var(--u2); background: #2a1c10; border-color:#7c3d10; }
+.ticket.u3 { border-left-color: var(--u3); background: #2c1416; border-color:#992a2a; }
+
+.t-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 13px 9px;
+}
+.t-table {
+  font-size: 24px; font-weight: 800; line-height: 1;
+  letter-spacing: .2px;
+}
+.t-table.unknown { color: var(--text-mute); }
+.t-head .spacer { flex: 1; }
+.t-clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 22px; font-weight: 800;
+  line-height: 1;
+  padding: 4px 9px; border-radius: 8px;
+  background: #00000040;
+}
+.u0 .t-clock { color: #86efac; }
+.u1 .t-clock { color: #fde047; }
+.u2 .t-clock { color: #fdba74; }
+.u3 .t-clock { color: #fca5a5; }
+
+/* nhãn chữ = kênh 2, không phụ thuộc màu */
+.t-state {
+  padding: 0 13px 9px;
+  font-size: 15px; font-weight: 700;
+}
+.u0 .t-state { color: #86efac; }
+.u1 .t-state { color: #fde047; }
+.u2 .t-state { color: #fdba74; }
+.u3 .t-state { color: #fca5a5; }
+
+/* ---------- Dòng món trong thẻ ---------- */
+.items { border-top: 1px solid #ffffff14; }
+.item {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 9px 13px;
+  min-height: 52px;
+  border-bottom: 1px solid #ffffff0d;
+}
+.item:last-child { border-bottom: none; }
+
+.tick {
+  flex: 0 0 auto;
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  border: 2px solid #4b5563;
+  background: #0000002e;
+  color: #6b7280;
+  font-size: 20px; font-weight: 800;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.tick:hover { border-color:#22c55e; color:#22c55e; }
+
+.item-body { flex: 1 1 auto; min-width: 0; }
+.item-name {
+  font-size: 19px; font-weight: 700; line-height: 1.25;
+  display: flex; align-items: baseline; gap: 7px;
+}
+.qty {
+  font-size: 19px; font-weight: 800;
+  color: #fff; background: #374151;
+  border-radius: 7px; padding: 0 7px;
+  flex: 0 0 auto;
+}
+.item-note {
+  font-size: 16px; color: #fbbf24;
+  margin-top: 3px; font-style: italic;
+}
+.item-meta {
+  flex: 0 0 auto; text-align: right;
+  font-size: 16px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding-top: 3px;
+  white-space: nowrap;
+}
+.m0 { color:#94a3b8; }
+.m1 { color:#fde047; }
+.m2 { color:#fdba74; }
+.m3 { color:#fca5a5; }
+.m-instant { color: var(--instant); }
+
+/* món đã phục vụ trong cùng bàn — mờ đi, vẫn thấy để biết đã ra gì */
+.item.done { opacity: .42; }
+.item.done .tick {
+  border-color:#16a34a; background:#14311f; color:#4ade80; cursor:default;
+}
+
+/* ---------- Chân thẻ ---------- */
+.t-foot {
+  display: flex; gap: 9px;
+  padding: 10px 13px 12px;
+  border-top: 1px solid #ffffff14;
+}
+.t-foot .btn-primary { flex: 1; min-height: 48px; font-size: 16px; }
+.t-foot .btn-ghost { border-color:#3f4756; }
+
+/* menu phụ ⋯ */
+.more-wrap { position: relative; }
+.more-menu {
+  display: none;
+  position: absolute; right: 0; bottom: 54px;
+  background: #232a36; border: 1px solid #3f4756;
+  border-radius: 12px; padding: 6px;
+  min-width: 190px; z-index: 20;
+  box-shadow: 0 12px 28px #000000a8;
+}
+.more-menu.open { display: block; }
+.more-menu button {
+  display: block; width: 100%; text-align: left;
+  min-height: 46px; padding: 0 12px;
+  background: transparent; border: none; border-radius: 8px;
+  color: var(--text); font-size: 16px; cursor: pointer;
+}
+.more-menu button:hover { background:#323a49; }
+.more-menu button.danger { color:#fca5a5; }
+.more-menu button.danger:hover { background:#3d1f1f; }
+
+/* ---------- Nút nổi ---------- */
+.fab {
+  position: fixed; right: 18px; bottom: 18px;
+  display: flex; gap: 10px; z-index: 30;
+}
+.fab .btn { min-height: 52px; font-size: 16px; box-shadow: 0 8px 22px #000000a0; }
+
+/* ---------- Lớp phủ (dialog) ---------- */
+.overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: #000000bf;
+  display: none;
+  align-items: center; justify-content: center;
+  padding: 18px;
+}
+.overlay.open { display: flex; }
+.dialog {
+  background: #1b202a; border: 1px solid var(--border);
+  border-radius: 16px; width: 100%; max-width: 460px;
+  max-height: 84vh; overflow-y: auto;
+  padding: 18px;
+}
+.dialog h2 { margin: 0 0 12px; font-size: 21px; }
+.dialog p  { font-size: 16px; color: var(--text-dim); line-height:1.5; }
+.reasons { display: grid; gap: 8px; margin: 14px 0 18px; }
+.reasons button {
+  min-height: 48px; text-align: left; padding: 0 14px;
+  border-radius: 10px; border: 1px solid #3f4756;
+  background: #232a36; color: var(--text);
+  font-size: 16px; cursor: pointer;
+}
+.reasons button.sel { border-color:#ef4444; background:#3d1f1f; }
+/* khoảng cách >=24px giữa Xác nhận và Bỏ qua */
+.dialog-actions { display: flex; gap: 26px; }
+.dialog-actions .btn { flex: 1; min-height: 50px; font-size: 16px; }
+
+.recall-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 0; border-bottom: 1px solid #ffffff12;
+}
+.recall-row:last-child { border-bottom: none; }
+.recall-row .rb { flex: 1; min-width: 0; }
+.recall-row .rn { font-size: 17px; font-weight: 700; }
+.recall-row .rt { font-size: 15px; color: var(--text-dim); margin-top:2px; }
+.recall-row .cd {
+  font-size: 15px; font-weight: 800; color:#fbbf24;
+  font-variant-numeric: tabular-nums;
+}
+
+.sess-row {
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px; margin-bottom: 10px;
+}
+.sess-row .sr-top { display:flex; align-items:center; gap:10px; }
+.sess-row .sr-name { font-size: 20px; font-weight: 800; flex:1; }
+.sess-row .sr-sum { font-size: 15px; color: var(--text-dim); margin-top:6px; }
+.warn { color:#fbbf24; font-weight:700; }
+
+/* ---------- Chú giải ---------- */
+.legend {
+  padding: 14px 16px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 15px; color: var(--text-dim);
+}
+.legend h3 { color: var(--text); font-size:16px; margin: 0 0 10px; }
+.legend .row { display:flex; flex-wrap:wrap; gap:18px; }
+.legend .k { display:flex; align-items:center; gap:8px; }
+.legend .sw { width:16px; height:16px; border-radius:4px; }
+.legend ul { margin: 12px 0 0; padding-left: 20px; line-height: 1.7; }
+
+.note-band {
+  background:#132030; border-bottom:1px solid #1e3a5f;
+  padding:8px 16px; font-size:14px; color:#93c5fd;
+}
+</style>
+</head>
+<body>
+
+<div class="screen">
+
+  <div class="note-band">
+    Phác thảo tĩnh — dữ liệu là giả, đồng hồ chạy thật. Chạm thử: ⋯ (menu huỷ), Hoàn tác, Thanh toán, ô tích món.
+  </div>
+
+  <!-- ============ 1. THANH ĐẦU ============ -->
+  <div class="header">
+    <h1>🍳 Bếp — quan-com-tam</h1>
+    <div class="conn" id="conn">
+      <span class="dot"></span><span>Đã kết nối</span>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" onclick="openO('recall')">↩ Hoàn tác <span class="badge">2</span></button>
+    <button class="btn" title="Làm mới">🔄</button>
+    <button class="btn">Đăng xuất</button>
+  </div>
+
+  <!-- ============ 2. KHAY GỌI NHÂN VIÊN ============ -->
+  <!-- Trong luồng bố cục, chiều cao cố định, KHÔNG phủ lên thẻ.
+       Rỗng thì cả dải này biến mất (chiều cao 0). -->
+  <div class="calltray">
+    <span class="label">🔔 Đang gọi nhân viên</span>
+
+    <div class="callchip">
+      <span class="tbl">Bàn 3</span>
+      <span class="min" data-since="255">4 phút</span>
+      <button>✓ Nhận</button>
+    </div>
+
+    <div class="callchip">
+      <span class="tbl">Bàn 7</span>
+      <span class="min" data-since="75">1 phút</span>
+      <button>✓ Nhận</button>
+    </div>
+
+    <div class="callchip">
+      <span class="tbl">Bàn 11</span>
+      <span class="min" data-since="20">0 phút</span>
+      <button>✓ Nhận</button>
+    </div>
+
+    <span class="callmore">+2 bàn khác ›</span>
+  </div>
+
+  <!-- ============ 3. VÙNG THẺ BÀN ============ -->
+  <div class="board">
+
+    <!-- ---- Bàn 8: trễ nặng (mức 3) ---- -->
+    <div class="ticket u3">
+      <div class="t-head">
+        <span class="t-table">Bàn 8</span>
+        <span class="spacer"></span>
+        <span class="t-clock" data-since="1580">26:20</span>
+      </div>
+      <div class="t-state">Trễ nặng · gọi 26 phút trước</div>
+      <div class="items">
+        <div class="item">
+          <button class="tick" title="Đánh dấu đã ra">✓</button>
+          <div class="item-body">
+            <div class="item-name"><span class="qty">2</span> Bò kho bánh mì</div>
+            <div class="item-note">ít mỡ</div>
+          </div>
+          <div class="item-meta m3">26 phút<br><span style="font-weight:600">trễ 11′</span></div>
+        </div>
+        <div class="item">
+          <button class="tick">✓</button>
+          <div class="item-body">
+            <div class="item-name"><span class="qty">1</span> Canh chua cá</div>
+          </div>
+          <div class="item-meta m2">26 phút<br><span style="font-weight:600">trễ 6′</span></div>
+        </div>
+      </div>
+      <div class="t-foot">
+        <button class="btn btn-primary">✓ Xong cả bàn (2)</button>
+        <div class="more-wrap">
+          <button class="btn btn-ghost" onclick="toggleMore(this)">⋯</button>
+          <div class="more-menu">
+            <button>Xem chi tiết bàn</button>
+            <button class="danger" onclick="openO('cancel')">Huỷ một món…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- Bàn 2: trễ (mức 2) ---- -->
+    <div class="ticket u2">
+      <div class="t-head">
+        <span class="t-table">Bàn 2</span>
+        <span class="spacer"></span>
+        <span class="t-clock" data-since="1015">16:55</span>
+      </div>
+      <div class="t-state">Trễ · gọi 16 phút trước</div>
+      <div class="items">
+        <div class="item">
+          <button class="tick">✓</button>
+          <div class="item-body">
+            <div class="item-name"><span class="qty">3</span> Cơm tấm sườn bì</div>
+          </div>
+          <div class="item-meta m2">16 phút<br><span style="font-weight:600">trễ 4′</span></div>
+        </div>
+        <div class="item done">
+          <button class="tick">✓</button>
+          <div class="item-body">
+            <div class="item-name"><span class="qty">3</span> Trà đá</div>
+          </div>
+          <div class="item-meta m0">đã ra</div>
+        </div>
+      </div>
+      <div class="t-foot">
+        <button class="btn btn-primary">✓ Xong cả bàn (1)</button>
+        <div class="more-wrap">
+          <button class="btn btn-ghost" onclick="toggleMore(this)">⋯</button>
+          <div class="more-menu">
+            <button>Xem chi tiết bàn</button>
+            <button class="danger" onclick="openO('cancel')">Huỷ một món…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- Bàn 5: chớm trễ (mức 1) ---- -->
+    <div class="ticket u1">
+      <div class="t-head">
+        <span class="t-table">Bàn 5</span>
+        <span class="spacer"></span>
+        <span class="t-clock" data-since="800">13:20</span>
+      </div>
+      <div class="t-state">Chớm trễ · gọi 13 phút trước</div>
+      <div class="items">
+        <div class="item">
+          <button class="tick">✓</button>
+          <div class="item-body">
+            <div class="item-name"><span class="qty">2</span> Bún bò Huế</div>
+            <div class="item-note">không hành, thêm ớt</div>
+          </div>
+          <div class="item-meta m1">13 phút<br><span style="font-weight:600">trễ 1′</span></div>
+        </div>
+        <div class="item">
+          <button class="tick">✓</button>
+          <div class="item-body">
+            <div class="item-name"><span class="qty">1</span> Nem nướng</div>
+          </div>
+          <div class="item-meta m0">13 phút<br><span style="font-weight:600">còn 2′</span></div>
+        </div>
+      </div>
+      <div class="t-foot">
+        <button class="btn btn-primary">✓ Xong cả bàn (2)</button>
+        <div class="more-wrap">
+          <button class="btn btn-ghost" onclick="toggleMore(this)">⋯</button>
+          <div class="more-menu">
+            <button>Xem chi tiết bàn</button>
+            <button class="danger" onclick="openO('cancel')">Huỷ một món…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- Bàn 12: đúng hạn (mức 0) ---- -->
+    <div class="ticket u0">
+      <div class="t-head">
+        <span class="t-table">Bàn 12</span>
+        <span class="spacer"></span>
+        <span class="t-clock" data-since="185">03:05</span>
+      </div>
+      <div class="t-state">Đúng hạn · gọi 3 phút trước</div>
+      <div class="items">
+        <div class="item">
+          <button class="tick">✓</button>
+          <div class="item-body">
+            <div class="item-name"><span class="qty">4</span> Gỏi cuốn</div>
+          </div>
+          <div class="item-meta m0">3 phút<br><span style="font-weight:600">còn 7′</span></div>
+        </div>
+        <div class="item">
+          <button class="tick">✓</button>
+          <div class="item-body">
+            <div class="item-name"><span class="qty">2</span> Bia Saigon</div>
+          </div>
+          <!-- prep_time = 0 → không tính hạn, không màu khẩn cấp -->
+          <div class="item-meta m-instant">rót ngay</div>
+        </div>
+      </div>
+      <div class="t-foot">
+        <button class="btn btn-primary">✓ Xong cả bàn (2)</button>
+        <div class="more-wrap">
+          <button class="btn btn-ghost" onclick="toggleMore(this)">⋯</button>
+          <div class="more-menu">
+            <button>Xem chi tiết bàn</button>
+            <button class="danger" onclick="openO('cancel')">Huỷ một món…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- Bàn 1: chỉ món phục vụ ngay ---- -->
+    <div class="ticket u0">
+      <div class="t-head">
+        <span class="t-table">Bàn 1</span>
+        <span class="spacer"></span>
+        <span class="t-clock" data-since="48">00:48</span>
+      </div>
+      <div class="t-state">Phục vụ ngay · không cần nấu</div>
+      <div class="items">
+        <div class="item">
+          <button class="tick">✓</button>
+          <div class="item-body">
+            <div class="item-name"><span class="qty">3</span> Nước suối</div>
+          </div>
+          <div class="item-meta m-instant">rót ngay</div>
+        </div>
+      </div>
+      <div class="t-foot">
+        <button class="btn btn-primary">✓ Xong cả bàn (1)</button>
+        <div class="more-wrap">
+          <button class="btn btn-ghost" onclick="toggleMore(this)">⋯</button>
+          <div class="more-menu">
+            <button>Xem chi tiết bàn</button>
+            <button class="danger" onclick="openO('cancel')">Huỷ một món…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- Trường hợp lỗi: không phân giải được nhãn bàn ---- -->
+    <div class="ticket u1">
+      <div class="t-head">
+        <span class="t-table unknown">Bàn ?</span>
+        <span class="spacer"></span>
+        <span class="t-clock" data-since="640">10:40</span>
+      </div>
+      <div class="t-state">Chớm trễ · không đọc được tên bàn</div>
+      <div class="items">
+        <div class="item">
+          <button class="tick">✓</button>
+          <div class="item-body">
+            <div class="item-name"><span class="qty">1</span> Mì xào bò</div>
+          </div>
+          <div class="item-meta m1">10 phút</div>
+        </div>
+      </div>
+      <div class="t-foot">
+        <button class="btn btn-primary">✓ Xong cả bàn (1)</button>
+        <div class="more-wrap">
+          <button class="btn btn-ghost" onclick="toggleMore(this)">⋯</button>
+          <div class="more-menu">
+            <button>Mở khu chẩn đoán (xem UUID)</button>
+            <button class="danger" onclick="openO('cancel')">Huỷ một món…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /board -->
+
+  <!-- ============ CHÚ GIẢI ============ -->
+  <div class="legend">
+    <h3>Thang khẩn cấp — màu nền + nhãn chữ + số phút (không nhấp nháy)</h3>
+    <div class="row">
+      <span class="k"><span class="sw" style="background:var(--u0)"></span> Đúng hạn — còn trong <code>prep_time</code></span>
+      <span class="k"><span class="sw" style="background:var(--u1)"></span> Chớm trễ — vượt hạn</span>
+      <span class="k"><span class="sw" style="background:var(--u2)"></span> Trễ — vượt 1,5×</span>
+      <span class="k"><span class="sw" style="background:var(--u3)"></span> Trễ nặng — vượt 2×</span>
+      <span class="k"><span class="sw" style="background:var(--instant)"></span> Phục vụ ngay — <code>prep_time = 0</code></span>
+    </div>
+    <ul>
+      <li>Một thẻ = một bàn. Đồng hồ góc phải đếm lên từ lần gọi cũ nhất của bàn đó.</li>
+      <li>Trong thẻ tích từng món, hoặc "Xong cả bàn" một chạm. Món đã ra vẫn nằm trong thẻ nhưng mờ đi.</li>
+      <li>Mức khẩn cấp của thẻ = mức cao nhất trong các món của bàn. Bàn trễ nhất nổi lên đầu.</li>
+      <li>Huỷ món nằm trong menu ⋯, cần xác nhận và chọn lý do. Không có nút ✕ cạnh nút Xong.</li>
+      <li>Hoàn tác là một danh sách mở từ thanh đầu, không chiếm chỗ thường trực trên board.</li>
+    </ul>
+  </div>
+
+</div><!-- /screen -->
+
+<!-- ============ NÚT NỔI ============ -->
+<div class="fab">
+  <button class="btn btn-primary" onclick="openO('checkout')">💰 Thanh toán</button>
+</div>
+
+<!-- ============ DIALOG: XÁC NHẬN HUỶ MÓN ============ -->
+<div class="overlay" id="o-cancel" onclick="bg(event,'cancel')">
+  <div class="dialog">
+    <h2>Huỷ món?</h2>
+    <p style="color:#f1f5f9;font-size:18px;font-weight:700;margin:0 0 4px">
+      Bàn 8 · 2× Bò kho bánh mì
+    </p>
+    <p style="margin:0">Đã gọi 26 phút trước · ghi chú "ít mỡ"</p>
+
+    <p style="margin:18px 0 0;font-weight:700;color:#f1f5f9">Chọn lý do</p>
+    <div class="reasons">
+      <button onclick="pick(this)">Hết nguyên liệu</button>
+      <button onclick="pick(this)">Khách đổi ý</button>
+      <button onclick="pick(this)">Bếp làm sai món</button>
+      <button onclick="pick(this)">Khác</button>
+    </div>
+
+    <div class="dialog-actions">
+      <button class="btn" onclick="closeO('cancel')">Bỏ qua</button>
+      <button class="btn btn-danger">Xác nhận huỷ</button>
+    </div>
+    <p style="margin-top:12px;font-size:14px;color:#64748b">
+      Nút Xác nhận chỉ hoạt động sau khi đã chọn lý do.
+    </p>
+  </div>
+</div>
+
+<!-- ============ DIALOG: HOÀN TÁC ============ -->
+<div class="overlay" id="o-recall" onclick="bg(event,'recall')">
+  <div class="dialog">
+    <h2>Hoàn tác món vừa xong</h2>
+    <p style="margin:0 0 8px">Chỉ hoàn tác được trong 2 phút kể từ lúc tích.</p>
+
+    <div class="recall-row">
+      <div class="rb">
+        <div class="rn">Bàn 2 · 3× Trà đá</div>
+        <div class="rt">Tích lúc 12:41</div>
+      </div>
+      <span class="cd" data-cd="74">1:14</span>
+      <button class="btn">↩ Hoàn tác</button>
+    </div>
+
+    <div class="recall-row">
+      <div class="rb">
+        <div class="rn">Bàn 9 · 1× Chả giò</div>
+        <div class="rt">Tích lúc 12:42</div>
+      </div>
+      <span class="cd" data-cd="31">0:31</span>
+      <button class="btn">↩ Hoàn tác</button>
+    </div>
+
+    <div style="margin-top:18px;display:flex;justify-content:flex-end">
+      <button class="btn" onclick="closeO('recall')">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DIALOG: THANH TOÁN ============ -->
+<div class="overlay" id="o-checkout" onclick="bg(event,'checkout')">
+  <div class="dialog">
+    <h2>Thanh toán bàn</h2>
+    <p style="margin:0 0 14px">Bàn đang mở, sắp theo thời điểm mở phiên.</p>
+
+    <div class="sess-row">
+      <div class="sr-top">
+        <span class="sr-name">Bàn 2</span>
+        <button class="btn btn-primary">Thanh toán</button>
+      </div>
+      <div class="sr-sum">
+        Mở 48 phút · 5 món đã ra · <span class="warn">1 món chưa ra</span> · tạm tính 245.000đ
+      </div>
+    </div>
+
+    <div class="sess-row">
+      <div class="sr-top">
+        <span class="sr-name">Bàn 8</span>
+        <button class="btn btn-primary">Thanh toán</button>
+      </div>
+      <div class="sr-sum">
+        Mở 31 phút · 0 món đã ra · <span class="warn">2 món chưa ra</span> · tạm tính 0đ
+      </div>
+    </div>
+
+    <div class="sess-row">
+      <div class="sr-top">
+        <span class="sr-name">Bàn 6</span>
+        <button class="btn btn-primary">Thanh toán</button>
+      </div>
+      <div class="sr-sum">
+        Mở 62 phút · 7 món đã ra · 0 món chưa ra · tạm tính 410.000đ
+      </div>
+    </div>
+
+    <p style="font-size:14px;color:#64748b;margin:14px 0 0">
+      Phần này chỉ cần nếu bạn thật sự thanh toán trên màn bếp — đang chờ bạn xác nhận.
+    </p>
+
+    <div style="margin-top:16px;display:flex;justify-content:flex-end">
+      <button class="btn" onclick="closeO('checkout')">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---- Đồng hồ đếm lên trên thẻ bàn: mm:ss ---- */
+function pad(n){ return String(n).padStart(2,'0'); }
+
+document.querySelectorAll('.t-clock').forEach(el => {
+  let s = parseInt(el.dataset.since, 10);
+  const tick = () => {
+    el.textContent = pad(Math.floor(s/60)) + ':' + pad(s%60);
+    s++;
+  };
+  tick();
+  setInterval(tick, 1000);
+});
+
+/* ---- Số phút chờ trong khay gọi nhân viên ---- */
+document.querySelectorAll('.callchip .min').forEach(el => {
+  let s = parseInt(el.dataset.since, 10);
+  const tick = () => { el.textContent = Math.floor(s/60) + ' phút'; s += 15; };
+  tick();
+  setInterval(tick, 15000);
+});
+
+/* ---- Đếm ngược cửa sổ hoàn tác 120 giây ---- */
+document.querySelectorAll('.cd').forEach(el => {
+  let s = parseInt(el.dataset.cd, 10);
+  const tick = () => {
+    if (s <= 0) { el.textContent = 'hết'; el.style.color = '#64748b'; return; }
+    el.textContent = Math.floor(s/60) + ':' + pad(s%60);
+    s--;
+  };
+  tick();
+  setInterval(tick, 1000);
+});
+
+/* ---- Menu ⋯ ---- */
+function toggleMore(btn){
+  const m = btn.nextElementSibling;
+  const wasOpen = m.classList.contains('open');
+  document.querySelectorAll('.more-menu').forEach(x => x.classList.remove('open'));
+  if (!wasOpen) m.classList.add('open');
+  event.stopPropagation();
+}
+document.addEventListener('click', () => {
+  document.querySelectorAll('.more-menu').forEach(x => x.classList.remove('open'));
+});
+
+/* ---- Dialog ---- */
+function openO(id){
+  document.getElementById('o-' + id).classList.add('open');
+  document.querySelectorAll('.more-menu').forEach(x => x.classList.remove('open'));
+}
+function closeO(id){ document.getElementById('o-' + id).classList.remove('open'); }
+function bg(e, id){ if (e.target.id === 'o-' + id) closeO(id); }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.querySelectorAll('.overlay').forEach(x => x.classList.remove('open'));
+});
+
+/* ---- Chọn lý do huỷ ---- */
+function pick(btn){
+  btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+}
+
+/* ---- Tích món: minh hoạ trạng thái đã ra ---- */
+document.querySelectorAll('.item:not(.done) .tick').forEach(t => {
+  t.addEventListener('click', () => {
+    const item = t.closest('.item');
+    item.classList.add('done');
+    const meta = item.querySelector('.item-meta');
+    meta.className = 'item-meta m0';
+    meta.textContent = 'đã ra';
+  });
+});
+</script>
+
+</body>
+</html>
